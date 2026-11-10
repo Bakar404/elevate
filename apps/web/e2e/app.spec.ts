@@ -31,6 +31,23 @@ test("inbox renders the dither background and only gated recommendations", async
   await expect(page.getByText(/weight-space/i)).toHaveCount(0);
 });
 
+test("home map shows watched repos; sidebar collapses and remembers it", async ({ page }) => {
+  await waitForOpenRecs(page);
+  await page.goto("/");
+  await expect(page.getByTestId("activity-graph")).toBeVisible();
+  await expect(page.locator('[data-testid="graph-repo"][data-state="review"]').first()).toBeVisible();
+  const sidebar = page.getByTestId("sidebar");
+  await expect(sidebar).toHaveAttribute("data-collapsed", "false");
+  await page.getByTestId("sidebar-toggle").click();
+  await expect(sidebar).toHaveAttribute("data-collapsed", "true");
+  await page.reload();
+  await expect(sidebar).toHaveAttribute("data-collapsed", "true");
+  await page.keyboard.press("ControlOrMeta+b");
+  await expect(sidebar).toHaveAttribute("data-collapsed", "false");
+  await page.getByRole("link", { name: "Radar" }).click();
+  await expect(page).toHaveURL(/\/radar/);
+});
+
 test("command palette opens with the keyboard and navigates", async ({ page }) => {
   await page.goto("/");
   await page.keyboard.press("ControlOrMeta+k");

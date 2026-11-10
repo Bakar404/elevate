@@ -1,10 +1,11 @@
 "use client";
 
 import { Command } from "cmdk";
-import { ArrowRight, RefreshCw, Satellite } from "lucide-react";
+import { ArrowRight, PanelLeft, Palette, RefreshCw, Satellite } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 import { toast } from "sonner";
+import { SIDEBAR_EVENT } from "@/lib/prefs";
 import { send } from "@/lib/utils";
 import { NAV } from "./sidebar";
 
@@ -77,6 +78,18 @@ export function CommandPalette() {
           </Item>
           <Item onSelect={() => action("Repo sync", "/api/repos/sync")}>
             <RefreshCw /> Sync GitHub repos
+          </Item>
+          <Item
+            onSelect={() => {
+              setOpen(false);
+              window.dispatchEvent(new Event(SIDEBAR_EVENT));
+            }}
+          >
+            <PanelLeft /> Toggle sidebar
+            <kbd className="ml-auto font-mono text-[11px] text-faint">⌘B</kbd>
+          </Item>
+          <Item onSelect={() => go("/brand")}>
+            <Palette /> Logo drafts
           </Item>
         </Command.Group>
         {recs.length > 0 && (

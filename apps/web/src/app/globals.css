@@ -107,6 +107,31 @@ body {
 .prose-chat a { color: var(--color-sky); text-decoration: underline; text-underline-offset: 3px; }
 .prose-chat strong { color: var(--color-fg); font-weight: 600; }
 
+/* Home map. */
+.graph-ping {
+  transform-box: fill-box;
+  transform-origin: center;
+  animation: graph-ping 2.2s var(--ease-out) infinite;
+}
+.graph-spin {
+  transform-box: fill-box;
+  transform-origin: center;
+  animation: graph-spin 40s linear infinite;
+}
+.graph-march {
+  animation: graph-march 1.2s linear infinite;
+}
+@keyframes graph-ping {
+  from { transform: scale(1); opacity: 0.7; }
+  to { transform: scale(2.6); opacity: 0; }
+}
+@keyframes graph-spin {
+  to { transform: rotate(360deg); }
+}
+@keyframes graph-march {
+  to { stroke-dashoffset: -16; }
+}
+
 @media (prefers-reduced-motion: reduce) {
   *,
   *::before,

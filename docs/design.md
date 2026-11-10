@@ -49,6 +49,19 @@ A calm, dark work surface over a living, dithered landscape. The background carr
 - No animation on actions repeated many times a day: the palette opens instantly, and so does keyboard navigation.
 - Honour `prefers-reduced-motion` everywhere. Toasts, shimmer and the background degrade to static.
 
+## Shell and live map
+
+- **Sidebar:** collapses to a 64 px icon rail with the toggle at the bottom, ⌘B, or "Toggle sidebar" in ⌘K. When collapsed, labels fade out instead of unmounting, tooltips name each icon, and an olive dot stands in for counts. The choice is remembered in a cookie, so the server renders the right width and nothing flickers.
+- **Live map** (home): the logo hub in the middle, watched repos on an inner ring, and matched techniques (sand diamonds) on an outer ring next to the repos they apply to.
+  - Each technique→repo link is styled by recommendation status:
+    - dashed and marching: still being gated
+    - olive with one particle: awaiting approval
+    - sky with two fast particles: swarm running
+    - sand: draft PR open
+  - A repo that is being worked on, or that has recommendations waiting, pulses.
+  - Hovering a node dims everything that isn't connected to it.
+  - All motion is SVG/SMIL and CSS and stops under `prefers-reduced-motion`.
+- **Logo:** five drafts are available at `/brand` (Ascent, Summit, Steps, Lift, Contour). Picking one sets a cookie, and the sidebar and map hub update. The favicon is the Ascent mark.
 ## Interaction
 
 - Every action is reachable from ⌘K, and every destructive or writing action asks for confirmation. Approving a recommendation shows exactly which repo, which executor and which budget.

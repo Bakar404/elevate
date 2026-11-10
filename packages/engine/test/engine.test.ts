@@ -4,6 +4,7 @@ import { FakeGitHub } from "@elevate/executors";
 import { replay } from "@elevate/policy";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import {
+  activityGraph,
   ApprovalError,
   approveRecommendation,
   demoLLM,
@@ -88,7 +89,12 @@ describe("approval and swarm", () => {
   it("approve → swarm → draft PR, with every write audited", async () => {
     const [r] = (await recs()).filter((x) => x.rec.status === "open");
     const swarm = await approveRecommendation(ctx, r!.rec.id, { executor: "fake", allowRepo: true });
+    const busy = await activityGraph(ctx);
+    expect(busy.repos[0]).toMatchObject({ fullName: r!.repo, state: "working" });
+    expect(busy.links.find((l) => l.id === r!.rec.id)?.status).toBe("approved");
     await drain(ctx);
+    const idle = (await activityGraph(ctx)).repos.find((x) => x.fullName === r!.repo);
+    expect(idle).toMatchObject({ state: expect.not.stringMatching("working"), prs: 1 });
     const [done] = await ctx.db.select().from(swarms).where(eq(swarms.id, swarm.id));
     expect(done?.status).toBe("succeeded");
     expect(done?.prUrl).toContain("/pull/");

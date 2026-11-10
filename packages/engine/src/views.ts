@@ -110,6 +110,79 @@ export async function listRepos(ctx: Ctx) {
   });
 }
 
+const LIVE_REC = new Set(["candidate", "open", "approved", "in_progress", "pr_opened"]);
+const ACTIVE_SWARM = new Set(["queued", "planning", "running"]);
+
+export type GraphRepoState = "working" | "review" | "watched";
+export type ActivityGraph = Awaited<ReturnType<typeof activityGraph>>;
+
+/**
+ * The home-screen map: watched repos (busiest first), the techniques currently matched to them,
+ * and one link per live recommendation. "working" = a swarm is running on the repo, "review" =
+ * a recommendation awaits approval.
+ */
+export async function activityGraph(ctx: Ctx, maxRepos = 12, maxTechniques = 8) {
+  const [repoRows, recRows, swarmRows] = await Promise.all([
+    ctx.db
+      .select({ id: repos.id, fullName: repos.fullName, language: repos.language, watch: repos.watch, allowSwarm: repos.allowSwarm, pushedAt: repos.pushedAt })
+      .from(repos),
+    ctx.db
+      .select({ id: recommendations.id, repoId: recommendations.repoId, techniqueId: techniques.id, technique: techniques.name, category: techniques.category, status: recommendations.status, score: recommendations.score })
+      .from(recommendations)
+      .innerJoin(techniques, eq(recommendations.techniqueId, techniques.id)),
+    ctx.db.select({ repoId: swarms.repoId, status: swarms.status }).from(swarms),
+  ]);
+  const live = recRows.filter((r) => LIVE_REC.has(r.status));
+  const working = new Set(swarmRows.filter((s) => ACTIVE_SWARM.has(s.status)).map((s) => s.repoId));
+  for (const r of live) if (r.status === "approved" || r.status === "in_progress") working.add(r.repoId);
+
+  const ranked = repoRows
+    .map((r) => {
+      const mine = live.filter((l) => l.repoId === r.id);
+      const open = mine.filter((l) => l.status === "open").length;
+      const state: GraphRepoState = working.has(r.id) ? "working" : open ? "review" : "watched";
+      return { ...r, mine, open, prs: mine.filter((l) => l.status === "pr_opened").length, state };
+    })
+    .filter((r) => r.watch || r.allowSwarm || r.mine.length)
+    .sort(
+      (a, b) =>
+        Number(b.state === "working") - Number(a.state === "working") ||
+        b.open - a.open ||
+        b.mine.length - a.mine.length ||
+        Number(b.allowSwarm) - Number(a.allowSwarm) ||
+        (b.pushedAt?.getTime() ?? 0) - (a.pushedAt?.getTime() ?? 0),
+    );
+  const shown = ranked.slice(0, maxRepos);
+  const shownIds = new Set(shown.map((r) => r.id));
+
+  const techCount = new Map<string, { id: string; name: string; category: string | null; n: number }>();
+  for (const l of live) {
+    if (!shownIds.has(l.repoId)) continue;
+    const t = techCount.get(l.techniqueId) ?? { id: l.techniqueId, name: l.technique, category: l.category, n: 0 };
+    t.n++;
+    techCount.set(l.techniqueId, t);
+  }
+  const techs = [...techCount.values()].sort((a, b) => b.n - a.n).slice(0, maxTechniques);
+  const techIds = new Set(techs.map((t) => t.id));
+
+  return {
+    repos: shown.map((r) => ({
+      id: r.id,
+      name: r.fullName.split("/").pop() ?? r.fullName,
+      fullName: r.fullName,
+      language: r.language,
+      state: r.state,
+      open: r.open,
+      prs: r.prs,
+    })),
+    techniques: techs.map(({ id, name, category }) => ({ id, name, category })),
+    links: live
+      .filter((l) => shownIds.has(l.repoId) && techIds.has(l.techniqueId))
+      .map((l) => ({ id: l.id, repoId: l.repoId, techniqueId: l.techniqueId, status: l.status, score: l.score })),
+    hidden: Math.max(0, ranked.length - shown.length),
+  };
+}
+
 export async function radar(ctx: Ctx) {
   const techs = await ctx.db.select().from(techniques).orderBy(desc(techniques.firstSeenAt)).limit(200);
   const its = await ctx.db

@@ -1,9 +1,12 @@
-import { listRecommendations, stats } from "@elevate/engine";
+import { activityGraph, listRecommendations, stats } from "@elevate/engine";
 import { Inbox, ShieldCheck } from "lucide-react";
+import { cookies } from "next/headers";
 import Link from "next/link";
+import { ActivityGraph } from "@/components/activity-graph";
 import { DitherBackground } from "@/components/dither-background";
 import { RecCard } from "@/components/rec";
 import { Empty, ShimmerText, Stat } from "@/components/ui";
+import { DEFAULT_LOGO, isLogoVariant, LOGO_COOKIE } from "@/lib/prefs";
 import { getCtx } from "@/lib/server";
 import { cn } from "@/lib/utils";
 
@@ -21,7 +24,8 @@ export default async function InboxPage({ searchParams }: { searchParams: Promis
   const { tab: raw } = await searchParams;
   const tab: TabKey = raw && raw in TABS ? (raw as TabKey) : "open";
   const ctx = await getCtx();
-  const [s, all] = await Promise.all([stats(ctx), listRecommendations(ctx)]);
+  const [s, all, graph, jar] = await Promise.all([stats(ctx), listRecommendations(ctx), activityGraph(ctx), cookies()]);
+  const logo = jar.get(LOGO_COOKIE)?.value;
   const counts = Object.fromEntries(Object.entries(TABS).map(([k, t]) => [k, all.filter((r) => (t.statuses as readonly string[]).includes(r.status)).length])) as Record<TabKey, number>;
   const rows = all.filter((r) => (TABS[tab].statuses as readonly string[]).includes(r.status));
   const verifying = all.filter((r) => r.status === "candidate").length;
@@ -48,7 +52,10 @@ export default async function InboxPage({ searchParams }: { searchParams: Promis
               </ShimmerText>
             </p>
           )}
-          <div className="mt-8 grid grid-cols-2 gap-6 rounded-2xl border border-line bg-bg/60 p-5 backdrop-blur-md sm:grid-cols-4">
+          <div className="mt-8">
+            <ActivityGraph data={graph} logo={isLogoVariant(logo) ? logo : DEFAULT_LOGO} />
+          </div>
+          <div className="mt-4 grid grid-cols-2 gap-6 rounded-2xl border border-line bg-bg/60 p-5 backdrop-blur-md sm:grid-cols-4">
             <Stat label="Ready" value={s.open} tone="olive" hint="awaiting your call" />
             <Stat label="Repos watched" value={s.repos} hint={`${s.allowedRepos} allow swarms`} />
             <Stat label="Techniques" value={s.techniques} hint={`${s.legit} legit · ${s.hype} hype`} />

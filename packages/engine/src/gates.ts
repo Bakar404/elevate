@@ -100,7 +100,7 @@ export async function legitimacyGate(ctx: Ctx, techniqueId: string): Promise<Gat
     distinctSources: new Set(linked.map((l) => l.source)).size,
     hnPoints: Math.max(hn.points, directPoints),
     hnStories: hn.stories,
-    topRepoStars: gh.top[0]?.stars ?? 0,
+    topRepoStars: Math.max(gh.top[0]?.stars ?? 0, ...linked.map((l) => Number(l.signals?.stars) || 0)),
     evidenceLinks: tech.claims.evidenceLinks.length,
   });
 

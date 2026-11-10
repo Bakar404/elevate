@@ -4,11 +4,13 @@ import { KeyRound, Plug } from "lucide-react";
 import { useEffect, useState } from "react";
 import { toast } from "sonner";
 import { EXECUTORS, cn, send } from "@/lib/utils";
+import { ModelPicker, useModels } from "./model-picker";
 import { Badge, Button, Card } from "./ui";
 
 type Settings = {
   demo: boolean;
   model: { provider: string; model: string; baseUrl: string; hasApiKey: boolean };
+  models: { pipeline: string; chat: string };
   github: { connected: boolean; login: string | null; source: string; error?: string };
   executor: string;
   thresholds: { legitimacy: number; priorFloor: number; soundness: number };
@@ -28,6 +30,7 @@ export function SettingsForm() {
   const [s, setS] = useState<Settings | null>(null);
   const [apiKey, setApiKey] = useState("");
   const [ghToken, setGhToken] = useState("");
+  const { data: catalog, refresh: refreshModels } = useModels();
 
   const load = () =>
     fetch("/api/settings")
@@ -39,18 +42,25 @@ export function SettingsForm() {
 
   if (!s) return <Card className="mt-8 h-96 animate-pulse" />;
 
-  const save = (data: unknown, msg: string) =>
-    toast.promise(
-      send("/api/settings", data, "PUT").then(load),
-      { loading: "Saving…", success: msg, error: (e: Error) => e.message },
-    );
+  const save = (data: unknown, msg: string) => {
+    const done = send("/api/settings", data, "PUT").then(load);
+    toast.promise(done, { loading: "Saving…", success: msg, error: (e: Error) => e.message });
+    return done;
+  };
   const num = (v: string) => Math.max(0, Number(v) || 0);
+  // The live list belongs to the saved provider; after switching provider, ids are typed until saved.
+  const listed = catalog && catalog.provider === s.model.provider ? catalog.models : [];
+  const nameOf = (id: string) => listed.find((m) => m.id === id)?.name ?? id;
+  const providerDefault = s.model.provider === "copilot" ? "Copilot default" : "Provider default";
 
   return (
     <div className="mt-8 grid gap-6">
       <Card className="p-6">
         <h2 className="font-medium">Model</h2>
-        <p className="mt-1 text-sm text-muted">Every agent (chat, gates, swarm planner) runs on the Copilot SDK. Other providers plug in with your own key.</p>
+        <p className="mt-1 text-sm text-muted">
+          Every agent (chat, gates, swarm planner) runs on the Copilot SDK. Other providers plug in with your own key. Pick a model for background work and a
+          default for chat; each conversation can switch on its own.
+        </p>
         <div className="mt-4 grid gap-2 sm:grid-cols-4" role="radiogroup">
           {PROVIDERS.map((p) => (
             <button
@@ -69,10 +79,29 @@ export function SettingsForm() {
           ))}
         </div>
         <div className="mt-4 grid gap-3 sm:grid-cols-2">
-          <label className="grid gap-1.5 text-xs text-faint">
-            Model
-            <input className={input} value={s.model.model} placeholder="default for the provider" onChange={(e) => setS({ ...s, model: { ...s.model, model: e.target.value } })} />
-          </label>
+          <div className="grid gap-1.5 text-xs text-faint" data-testid="pipeline-model">
+            <span>Background agents: triage, gates, swarm planner</span>
+            <ModelPicker
+              label="Background model"
+              value={s.model.model}
+              models={listed}
+              defaultLabel={providerDefault}
+              onChange={(id) => setS({ ...s, model: { ...s.model, model: id }, models: { ...s.models, pipeline: id } })}
+            />
+          </div>
+          <div className="grid gap-1.5 text-xs text-faint" data-testid="chat-model">
+            <span>Chat default</span>
+            <ModelPicker
+              label="Chat model"
+              value={s.models.chat}
+              models={listed}
+              defaultLabel={s.model.model ? `Same as background (${nameOf(s.model.model)})` : `Same as background (${providerDefault})`}
+              onChange={(id) => setS({ ...s, models: { ...s.models, chat: id } })}
+            />
+          </div>
+          {catalog?.error && s.model.provider === "copilot" && (
+            <p className="text-xs text-danger sm:col-span-2">Couldn't list Copilot models ({catalog.error}). You can still type a model id.</p>
+          )}
           {s.model.provider !== "copilot" && (
             <label className="grid gap-1.5 text-xs text-faint">
               Base URL
@@ -98,7 +127,10 @@ export function SettingsForm() {
             size="sm"
             variant="primary"
             onClick={() => {
-              save({ model: { provider: s.model.provider, model: s.model.model, baseUrl: s.model.baseUrl }, ...(apiKey ? { apiKey } : {}) }, "Model saved");
+              save(
+                { model: { provider: s.model.provider, model: s.model.model, baseUrl: s.model.baseUrl }, models: { chat: s.models.chat }, ...(apiKey ? { apiKey } : {}) },
+                "Models saved",
+              ).then(refreshModels, () => {});
               setApiKey("");
             }}
           >

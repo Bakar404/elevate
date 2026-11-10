@@ -3,6 +3,7 @@ import { cookies } from "next/headers";
 import { CommandPalette } from "@/components/command-palette";
 import { LiveRefresh } from "@/components/live-refresh";
 import { DEFAULT_LOGO, isLogoVariant, LOGO_COOKIE, SIDEBAR_COOKIE } from "@/lib/prefs";
+import { BackToTop, ScrollProgress } from "@/components/scroll";
 import { Sidebar } from "@/components/sidebar";
 import { getCtx } from "@/lib/server";
 
@@ -21,6 +22,8 @@ export default async function AppLayout({ children }: { children: React.ReactNod
         initialCollapsed={jar.get(SIDEBAR_COOKIE)?.value === "collapsed"}
       />
       <main className="relative min-w-0 flex-1">{children}</main>
+      <ScrollProgress />
+      <BackToTop />
       <CommandPalette />
       <LiveRefresh />
     </div>

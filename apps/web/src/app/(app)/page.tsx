@@ -1,11 +1,14 @@
-import { activityGraph, listRecommendations, stats } from "@elevate/engine";
-import { Inbox, ShieldCheck } from "lucide-react";
+import { activityGraph, discoveryFeed, listRecommendations, radar, searchPlan, stats } from "@elevate/engine";
+import { ArrowRight, Inbox, Radar as RadarIcon, ShieldCheck, Sparkles } from "lucide-react";
 import { cookies } from "next/headers";
 import Link from "next/link";
 import { ActivityGraph } from "@/components/activity-graph";
 import { DitherBackground } from "@/components/dither-background";
+import { FeedRow, RepoChips, SearchPlan } from "@/components/discovery";
 import { RecCard } from "@/components/rec";
-import { Empty, ShimmerText, Stat } from "@/components/ui";
+import { Reveal } from "@/components/scroll";
+import { Card, Empty, ScoreRing, ShimmerText, Stat } from "@/components/ui";
+import { scoreTone } from "@/lib/tone";
 import { DEFAULT_LOGO, isLogoVariant, LOGO_COOKIE } from "@/lib/prefs";
 import { getCtx } from "@/lib/server";
 import { cn } from "@/lib/utils";
@@ -24,7 +27,21 @@ export default async function InboxPage({ searchParams }: { searchParams: Promis
   const { tab: raw } = await searchParams;
   const tab: TabKey = raw && raw in TABS ? (raw as TabKey) : "open";
   const ctx = await getCtx();
-  const [s, all, graph, jar] = await Promise.all([stats(ctx), listRecommendations(ctx), activityGraph(ctx), cookies()]);
+  const [s, all, graph, jar, plan, focused, recent, techs] = await Promise.all([
+    stats(ctx),
+    listRecommendations(ctx),
+    activityGraph(ctx),
+    cookies(),
+    searchPlan(ctx),
+    discoveryFeed(ctx, { limit: 8, repoOnly: true, hideHype: true }),
+    discoveryFeed(ctx, { limit: 8, hideHype: true }),
+    radar(ctx),
+  ]);
+  const fresh = focused.length ? focused : recent;
+  const legit = techs
+    .filter((t) => t.legitimacy?.passed)
+    .sort((a, b) => b.foundFor.length - a.foundFor.length || (b.legitimacy?.score ?? 0) - (a.legitimacy?.score ?? 0))
+    .slice(0, 4);
   const logo = jar.get(LOGO_COOKIE)?.value;
   const counts = Object.fromEntries(Object.entries(TABS).map(([k, t]) => [k, all.filter((r) => (t.statuses as readonly string[]).includes(r.status)).length])) as Record<TabKey, number>;
   const rows = all.filter((r) => (TABS[tab].statuses as readonly string[]).includes(r.status));
@@ -32,8 +49,9 @@ export default async function InboxPage({ searchParams }: { searchParams: Promis
 
   return (
     <div>
-      <section className="relative isolate overflow-hidden border-b border-line">
-        <div className="absolute inset-0 -z-10">
+      <section className="relative isolate">
+        {/* The background fades out instead of stopping at a hard edge. */}
+        <div className="absolute inset-x-0 top-0 -z-10 h-[calc(100%+6rem)] overflow-hidden [mask-image:linear-gradient(to_bottom,#000_55%,transparent)]">
           <DitherBackground />
           <div className="absolute inset-0 bg-[linear-gradient(to_bottom,oklch(0.145_0.006_250/0.55),oklch(0.145_0.006_250/0.85)_70%,var(--color-bg))]" />
         </div>
@@ -61,11 +79,12 @@ export default async function InboxPage({ searchParams }: { searchParams: Promis
             <Stat label="Techniques" value={s.techniques} hint={`${s.legit} legit · ${s.hype} hype`} />
             <Stat label="Draft PRs" value={s.prs} tone="sky" hint={`${s.activeSwarms} swarm${s.activeSwarms === 1 ? "" : "s"} running`} />
           </div>
+          <SearchPlan plan={plan} className="mt-4" />
         </div>
       </section>
 
-      <div className="mx-auto max-w-5xl px-8 py-8">
-        <div className="mb-5 flex gap-1 border-b border-line" role="tablist">
+      <div className="mx-auto max-w-5xl px-8 pb-8" id="inbox">
+        <div className="sticky top-0 z-20 -mx-8 mb-5 flex gap-1 border-b border-line bg-bg/80 px-8 pt-3 backdrop-blur-md" role="tablist" aria-label="Recommendations">
           {(Object.keys(TABS) as TabKey[]).map((k) => (
             <Link
               key={k}
@@ -96,6 +115,61 @@ export default async function InboxPage({ searchParams }: { searchParams: Promis
           </Empty>
         )}
       </div>
+
+      <div className="mx-auto grid max-w-5xl gap-10 px-8 pb-16 lg:grid-cols-[1.4fr_1fr]">
+        <Reveal>
+          <SectionHead
+            icon={<Sparkles />}
+            title={focused.length ? "Fresh for your repos" : "Fresh from your sources"}
+            hint={focused.length ? "Found by searches built from each repo's stack and domain." : "Repo searches run on the next sweep."}
+            href="/radar?show=feed"
+          />
+          {fresh.length ? (
+            <ul className="rounded-2xl border border-line bg-panel/40 px-4" data-testid="fresh">
+              {fresh.map((i) => (
+                <FeedRow key={i.id} item={i} />
+              ))}
+            </ul>
+          ) : (
+            <Empty icon={<Sparkles />} title="Nothing pulled in yet">
+              Run a sweep from the Radar to fetch what's new.
+            </Empty>
+          )}
+        </Reveal>
+        <Reveal delay={0.08}>
+          <SectionHead icon={<RadarIcon />} title="On the radar" hint="Legit techniques, ones found for your repos first." href="/radar" />
+          <div className="grid gap-3">
+            {legit.length === 0 && <Empty icon={<RadarIcon />} title="No legit techniques yet" />}
+            {legit.map((t) => (
+              <Card key={t.id} className="flex gap-3 p-4">
+                <ScoreRing value={t.legitimacy?.score} size={38} tone={scoreTone(t.legitimacy?.score, t.legitimacy?.passed)} label="legitimacy" />
+                <div className="min-w-0 flex-1">
+                  <p className="text-sm font-medium text-pretty">{t.name}</p>
+                  <p className="mt-0.5 line-clamp-2 text-xs text-muted">{t.summary}</p>
+                  <RepoChips repos={t.foundFor} className="mt-2 text-xs" />
+                </div>
+              </Card>
+            ))}
+          </div>
+        </Reveal>
+      </div>
+    </div>
+  );
+}
+
+function SectionHead({ icon, title, hint, href }: { icon: React.ReactNode; title: string; hint: string; href: string }) {
+  return (
+    <div className="mb-3 flex items-end justify-between gap-3">
+      <div>
+        <h2 className="flex items-center gap-2 text-sm font-medium [&_svg]:size-4 [&_svg]:text-faint">
+          {icon}
+          {title}
+        </h2>
+        <p className="mt-0.5 text-xs text-faint">{hint}</p>
+      </div>
+      <Link href={href} className="inline-flex shrink-0 items-center gap-1 text-xs text-muted hover:text-fg">
+        See all <ArrowRight className="size-3" aria-hidden />
+      </Link>
     </div>
   );
 }

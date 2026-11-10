@@ -1,7 +1,7 @@
 import { runChatTurn, type ChatEvent, type ToolSpec } from "@elevate/agent";
 import { asc, eq, messages, threads, type ToolCallRecord } from "@elevate/db";
 import type { Ctx } from "./context";
-import { resolveModelConfig } from "./context";
+import { chatModelConfig } from "./models";
 import { CHAT_SYSTEM } from "./prompts";
 import { chatTools } from "./tools";
 
@@ -28,9 +28,10 @@ export async function chat(ctx: Ctx, threadId: string, prompt: string, onEvent: 
   };
   let text: string;
   try {
+    const config = await chatModelConfig(ctx, threadId);
     text = ctx.demo
-      ? await demoChat(tools, prompt, record)
-      : (await runChatTurn({ threadId, config: await resolveModelConfig(ctx.db), system: CHAT_SYSTEM, tools, history, prompt, onEvent: record, signal })).text;
+      ? await demoChat(tools, prompt, record, config.model)
+      : (await runChatTurn({ threadId, config, system: CHAT_SYSTEM, tools, history, prompt, onEvent: record, signal })).text;
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
     onEvent({ type: "error", message });
@@ -42,7 +43,7 @@ export async function chat(ctx: Ctx, threadId: string, prompt: string, onEvent: 
 }
 
 /** Offline stand-in for the model: routes the question to one real tool and summarises the result. */
-async function demoChat(tools: ToolSpec[], prompt: string, onEvent: (e: ChatEvent) => void) {
+async function demoChat(tools: ToolSpec[], prompt: string, onEvent: (e: ChatEvent) => void, model?: string) {
   const q = prompt.toLowerCase();
   const pick = /repo/.test(q) ? "list_repos" : /radar|technique|new|paper|hn|hacker/.test(q) ? "search_radar" : "list_recommendations";
   const t = tools.find((x) => x.name === pick)!;
@@ -61,7 +62,7 @@ async function demoChat(tools: ToolSpec[], prompt: string, onEvent: (e: ChatEven
   });
   const head =
     pick === "list_repos" ? "Here are your repos:" : pick === "search_radar" ? "From the radar:" : "Open recommendations that passed both gates:";
-  const text = `${head}\n\n${lines.join("\n") || "- nothing yet"}\n\n_Demo mode: answers come from the real tools, phrased by a stand-in model._`;
+  const text = `${head}\n\n${lines.join("\n") || "- nothing yet"}\n\n_Demo mode: answers come from the real tools, phrased by a stand-in for ${model ?? "the default model"}._`;
   for (const chunk of text.match(/[\s\S]{1,24}/g) ?? []) onEvent({ type: "delta", text: chunk });
   onEvent({ type: "message", text });
   onEvent({ type: "done" });

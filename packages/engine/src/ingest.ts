@@ -1,18 +1,34 @@
 import { cosine } from "@elevate/agent";
-import { and, emit, enqueue, eq, inArray, items, sources, techniques } from "@elevate/db";
-import { defaultSources, fetchSource, refreshSourceUrl } from "@elevate/sources";
+import { and, emit, enqueue, eq, inArray, items, repos, sources, techniques, type ItemSignals } from "@elevate/db";
+import {
+  buildFocusQueries,
+  defaultFetch,
+  defaultSources,
+  fetchFocused,
+  fetchSource,
+  focusBackend,
+  parseFocusResponse,
+  refreshSourceUrl,
+  type FocusBackend,
+  type Fetcher,
+  type RawItem,
+} from "@elevate/sources";
 import type { Ctx } from "./context";
 import { TRIAGE_SYSTEM, TriageSchema } from "./prompts";
 
 export async function seedSources(ctx: Ctx, tenantId = "local") {
-  const existing = await ctx.db.select({ id: sources.id }).from(sources).where(eq(sources.tenantId, tenantId)).limit(1);
-  if (existing.length) return 0;
-  const defs = defaultSources();
-  await ctx.db
+  // Demo workspaces are offline: keep their seeded sources only.
+  if (ctx.demo) {
+    const existing = await ctx.db.select({ id: sources.id }).from(sources).where(eq(sources.tenantId, tenantId)).limit(1);
+    if (existing.length) return 0;
+  }
+  // Insert any default the workspace doesn't have yet (by URL), so new built-in sources reach existing users.
+  const added = await ctx.db
     .insert(sources)
-    .values(defs.map((d) => ({ ...d, tenantId, config: d.config ?? {} })))
-    .onConflictDoNothing();
-  return defs.length;
+    .values(defaultSources().map((d) => ({ ...d, tenantId, config: d.config ?? {} })))
+    .onConflictDoNothing()
+    .returning({ id: sources.id });
+  return added.length;
 }
 
 export async function sweepSources(ctx: Ctx, tenantId = "local") {
@@ -28,8 +44,10 @@ export async function fetchSourceItems(ctx: Ctx, sourceId: string) {
   const [src] = await ctx.db.select().from(sources).where(eq(sources.id, sourceId));
   if (!src) throw new Error(`Source ${sourceId} not found`);
   try {
-    const raw = await fetchSource({ ...src, url: refreshSourceUrl(src) }, ctx.fetcher);
+    const backend = focusBackend(src.url);
+    const raw = backend ? await fetchFocusedItems(ctx, src.tenantId, backend) : await fetchSource({ ...src, url: refreshSourceUrl(src) }, ctx.fetcher);
     let inserted = 0;
+    let refocused = 0;
     for (const r of raw) {
       const res = await ctx.db
         .insert(items)
@@ -47,10 +65,15 @@ export async function fetchSourceItems(ctx: Ctx, sourceId: string) {
         .onConflictDoNothing()
         .returning({ id: items.id });
       inserted += res.length;
+      if (!res.length && r.signals?.focus && (await attachFocus(ctx, src.tenantId, r))) refocused++;
     }
     await ctx.db.update(sources).set({ lastFetchedAt: new Date(), lastError: null }).where(eq(sources.id, src.id));
-    if (inserted) {
-      await emit(ctx.db, { kind: "source.fetched", message: `${src.name}: ${inserted} new items`, data: { sourceId: src.id } });
+    if (inserted || refocused) {
+      await emit(ctx.db, {
+        kind: "source.fetched",
+        message: `${src.name}: ${inserted} new items${refocused ? `, ${refocused} seen before now tied to your repos` : ""}`,
+        data: { sourceId: src.id },
+      });
       await enqueue(ctx.db, "items.triage", {}, { dedupeKey: `items.triage:${src.tenantId}`, tenantId: src.tenantId });
     }
     return inserted;
@@ -63,6 +86,61 @@ export async function fetchSourceItems(ctx: Ctx, sourceId: string) {
   }
 }
 
+const FOCUS_QUERIES = Number(process.env.ELEVATE_FOCUS_QUERIES ?? 8);
+
+/** The searches a sweep runs on behalf of the watched repos. */
+export async function focusQueries(ctx: Ctx, tenantId = "local", max = FOCUS_QUERIES) {
+  const rows = await ctx.db
+    .select({ id: repos.id, fullName: repos.fullName, language: repos.language, topics: repos.topics, pushedAt: repos.pushedAt, profile: repos.profile, archived: repos.archived })
+    .from(repos)
+    .where(and(eq(repos.tenantId, tenantId), eq(repos.watch, true)));
+  return buildFocusQueries(rows.filter((r) => !r.archived), max);
+}
+
+/** GitHub search allows 10 anonymous requests a minute; with the user's token it's 30. */
+async function gitHubFetcher(ctx: Ctx): Promise<Fetcher> {
+  const token = await ctx.token().catch(() => undefined);
+  if (!token) return defaultFetch;
+  return (url) =>
+    fetch(url, {
+      headers: { authorization: `Bearer ${token}`, accept: "application/vnd.github+json", "user-agent": "elevate/0.1 (+https://github.com/Bakar404/elevate)" },
+      signal: AbortSignal.timeout(20_000),
+    });
+}
+
+async function fetchFocusedItems(ctx: Ctx, tenantId: string, backend: FocusBackend): Promise<RawItem[]> {
+  const queries = await focusQueries(ctx, tenantId);
+  if (!queries.length) return [];
+  const fetcher = ctx.fetcher ?? (backend === "github" ? await gitHubFetcher(ctx) : defaultFetch);
+  // arXiv asks API clients to wait 3 s between calls.
+  const pauseMs = backend === "arxiv" && !ctx.fetcher ? 3000 : 0;
+  const { items: found, errors } = await fetchFocused(backend, queries, fetcher, parseFocusResponse, { pauseMs });
+  if (errors.length) {
+    await emit(ctx.db, { kind: "source.partial", level: "warn", message: `${backend}: ${errors.length} of ${queries.length} searches failed (${errors[0]})`, tenantId });
+  }
+  return found;
+}
+
+/**
+ * An item we already had (e.g. from the front page) also turned up in a repo search: remember which repos,
+ * and triage it again with them in mind if it was dismissed without that context. Returns whether it changed.
+ */
+async function attachFocus(ctx: Ctx, tenantId: string, r: RawItem) {
+  const [row] = await ctx.db
+    .select({ id: items.id, signals: items.signals, status: items.status })
+    .from(items)
+    .where(and(eq(items.tenantId, tenantId), eq(items.url, r.url)));
+  if (!row) return false;
+  const prev = row.signals.focus?.repoIds ?? [];
+  const next = [...new Set([...prev, ...r.signals!.focus!.repoIds])];
+  if (next.length === prev.length) return false;
+  const signals: ItemSignals = { ...row.signals, focus: { query: row.signals.focus?.query ?? r.signals!.focus!.query, repoIds: next } };
+  await ctx.db
+    .update(items)
+    .set({ signals, ...(row.status === "irrelevant" ? { status: "new" as const } : {}) })
+    .where(eq(items.id, row.id));
+  return true;
+}
 export function slugify(s: string): string {
   return s
     .toLowerCase()
@@ -89,13 +167,24 @@ export async function triageItems(ctx: Ctx, tenantId = "local", maxItems = 45) {
     .from(techniques)
     .where(eq(techniques.tenantId, tenantId));
   const created: string[] = [];
+  const focusIds = [...new Set(pending.flatMap((p) => p.item.signals.focus?.repoIds ?? []))];
+  const repoNames = new Map(
+    focusIds.length
+      ? (await ctx.db.select({ id: repos.id, fullName: repos.fullName, profile: repos.profile }).from(repos).where(inArray(repos.id, focusIds))).map((r) => [
+          r.id,
+          `${r.fullName}${r.profile ? ` (${r.profile.stack.slice(0, 5).join(", ")})` : ""}`,
+        ])
+      : [],
+  );
+  const foundFor = (s: ItemSignals) =>
+    s.focus ? `\nFound searching "${s.focus.query}" for: ${s.focus.repoIds.map((id) => repoNames.get(id)).filter(Boolean).slice(0, 4).join("; ")}` : "";
 
   for (let i = 0; i < pending.length; i += TRIAGE_BATCH) {
     const batch = pending.slice(i, i + TRIAGE_BATCH);
     const prompt = batch
       .map(
         ({ item, sourceName }, idx) =>
-          `[${idx}] (${sourceName}) ${item.title}\nURL: ${item.url}\n${(item.content ?? "").slice(0, 600)}`,
+          `[${idx}] (${sourceName}) ${item.title}\nURL: ${item.url}${foundFor(item.signals)}\n${(item.content ?? "").slice(0, 600)}`,
       )
       .join("\n\n");
     let result;

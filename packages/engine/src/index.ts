@@ -12,3 +12,5 @@ export * from "./chat";
 export * from "./views";
 export * from "./demo";
 export { demoLLM } from "./fake";
+export * from "./search";
+export * from "./models";

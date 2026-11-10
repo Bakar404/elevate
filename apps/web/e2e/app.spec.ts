@@ -51,7 +51,7 @@ test("home map shows watched repos; sidebar collapses and remembers it", async (
 test("command palette opens with the keyboard and navigates", async ({ page }) => {
   await page.goto("/");
   await page.keyboard.press("ControlOrMeta+k");
-  const input = page.getByPlaceholder("Jump to a page, recommendation or action…");
+  const input = page.getByPlaceholder("Search repos by stack or domain, techniques, recommendations…");
   await expect(input).toBeVisible();
   await input.fill("radar");
   await page.keyboard.press("Enter");
@@ -97,8 +97,66 @@ test("chat streams an answer with tool calls", async ({ page }) => {
   await expect(page.getByTestId("messages")).toContainText(/ledger-api|llm-router/);
 });
 
+test("chat model can be picked per conversation, and conversations can be deleted", async ({ page }) => {
+  await page.goto("/chat");
+  await page.getByRole("button", { name: "New chat" }).click();
+  await page.getByTestId("model-picker").click();
+  await page.getByRole("option", { name: /GPT-5 mini/ }).click();
+  await expect(page.getByTestId("model-picker")).toContainText("GPT-5 mini");
+  await page.getByLabel("Message").fill("list my repos please");
+  await page.getByLabel("Send").click();
+  await expect(page.getByTestId("messages")).toContainText("stand-in for gpt-5-mini");
+
+  const row = page.getByTestId("thread").filter({ hasText: "list my repos please" });
+  await expect(row).toHaveCount(1);
+  await page.reload();
+  await row.click();
+  await expect(page.getByTestId("model-picker")).toContainText("GPT-5 mini");
+
+  await row.hover();
+  await row.getByRole("button", { name: /Delete/ }).click();
+  await expect(page.getByRole("dialog")).toContainText("Delete this conversation?");
+  await page.getByTestId("confirm-delete").click();
+  await expect(row).toHaveCount(0);
+  await page.reload();
+  await expect(page.getByTestId("thread").filter({ hasText: "list my repos please" })).toHaveCount(0);
+});
+
 test("settings shows the proof receipt", async ({ page }) => {
   await page.goto("/settings");
+  await expect(page.getByTestId("pipeline-model")).toBeVisible();
+  await expect(page.getByTestId("chat-model")).toBeVisible();
   await expect(page.getByTestId("proof-card")).toContainText(/receipt: pass/i);
   await expect(page.getByTestId("proof-card")).toContainText("27 of 27 mutants");
+});
+
+test("repo search matches by stack and domain, keeps state in the URL, and filters", async ({ page }) => {
+  await page.goto("/repos");
+  await expect(page.getByTestId("repo")).toHaveCount(3);
+  await page.getByTestId("repo-search").fill("fintech postgres");
+  await expect(page).toHaveURL(/q=fintech\+postgres/);
+  await expect(page.getByTestId("repo")).toHaveCount(1);
+  await expect(page.getByTestId("repo").first()).toContainText("demo/ledger-api");
+  await page.reload();
+  await expect(page.getByTestId("repo-search")).toHaveValue("fintech postgres");
+  await expect(page.getByTestId("repo")).toHaveCount(1);
+  await page.getByRole("button", { name: "Clear search" }).click();
+  await expect(page.getByTestId("repo")).toHaveCount(3);
+  await page.getByRole("tab", { name: /Swarms allowed/ }).click();
+  await expect(page).toHaveURL(/f=swarm/);
+  await page.getByTestId("repo-search").fill("zzz-no-such-repo");
+  await expect(page.getByText("No repos match")).toBeVisible();
+});
+
+test("home and radar show what is being searched for each repo, and the feed scrolls", async ({ page }) => {
+  await waitForOpenRecs(page);
+  await page.goto("/");
+  const plan = page.getByTestId("search-plan");
+  await expect(plan).toBeVisible();
+  for (const name of ["ledger-api", "llm-router", "edge-firmware"]) await expect(plan).toContainText(name);
+  await page.getByTestId("fresh").scrollIntoViewIfNeeded();
+  await expect(page.getByTestId("fresh").getByTestId("feed-item").first()).toBeVisible();
+  await page.goto("/radar?show=feed");
+  await expect(page.getByTestId("focus-sources")).toContainText("searches HN, arXiv and GitHub");
+  await expect(page.getByTestId("feed-item").first()).toBeVisible();
 });

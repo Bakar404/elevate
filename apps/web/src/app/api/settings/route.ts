@@ -1,5 +1,5 @@
 import { deleteSecret, getSecret, getSetting, setSecret, setSetting, audit } from "@elevate/db";
-import { DEFAULT_BUDGET, resetGitHubClient, resolveModelConfig, swarmBudget, thresholds } from "@elevate/engine";
+import { DEFAULT_BUDGET, modelPrefs, resetGitHubClient, resolveModelConfig, setModelPrefs, swarmBudget, thresholds } from "@elevate/engine";
 import { resolveGitHubToken } from "@elevate/github";
 import { z } from "zod";
 import { body, route } from "@/lib/api";
@@ -24,6 +24,7 @@ export const GET = route(async (ctx) => {
   return {
     demo: ctx.demo,
     model: { provider: model.provider, model: model.model ?? "", baseUrl: model.baseUrl ?? "", hasApiKey: Boolean(model.apiKey) },
+    models: await modelPrefs(ctx),
     github: await githubStatus(ctx),
     executor: await getSetting(ctx.db, "executor.default", ctx.demo ? "fake" : "copilot-cloud"),
     thresholds: await thresholds(ctx),
@@ -34,6 +35,7 @@ export const GET = route(async (ctx) => {
 
 const Put = z.object({
   model: z.object({ provider: z.enum(["copilot", "anthropic", "openai", "azure"]), model: z.string().max(100), baseUrl: z.string().max(300) }).partial().optional(),
+  models: z.object({ pipeline: z.string().max(100), chat: z.string().max(100) }).partial().optional(),
   apiKey: z.string().max(500).nullable().optional(),
   githubToken: z.string().max(500).nullable().optional(),
   executor: z.enum(["copilot-cloud", "claude-action", "codex-cloud", "local", "fake"]).optional(),
@@ -44,6 +46,7 @@ const Put = z.object({
 export const PUT = route(async (ctx, req) => {
   const p = Put.parse(await body(req));
   if (p.model) await setSetting(ctx.db, "model", { ...(await getSetting(ctx.db, "model", {})), ...p.model });
+  if (p.models) await setModelPrefs(ctx, p.models);
   if (p.apiKey !== undefined) await (p.apiKey ? setSecret(ctx.db, "provider_api_key", p.apiKey) : deleteSecret(ctx.db, "provider_api_key"));
   if (p.githubToken !== undefined) {
     await (p.githubToken ? setSecret(ctx.db, "github_token", p.githubToken) : deleteSecret(ctx.db, "github_token"));

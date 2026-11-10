@@ -100,7 +100,7 @@ export const repos = pgTable(
   (t) => [uniqueIndex("repos_tenant_full_name").on(t.tenantId, t.fullName)],
 );
 
-export type SourceKind = "hn" | "rss" | "arxiv";
+export type SourceKind = "hn" | "rss" | "arxiv" | "github";
 
 export const sources = pgTable(
   "sources",
@@ -121,7 +121,14 @@ export const sources = pgTable(
   (t) => [uniqueIndex("sources_tenant_url").on(t.tenantId, t.url)],
 );
 
-export type ItemSignals = { points?: number; comments?: number; hnId?: string };
+export type ItemSignals = {
+  points?: number;
+  comments?: number;
+  hnId?: string;
+  stars?: number;
+  /** Set when the item was found by a search built from these repos' profiles. */
+  focus?: { query: string; repoIds: string[] };
+};
 
 export const items = pgTable(
   "items",
@@ -360,6 +367,8 @@ export const threads = pgTable("threads", {
   id: uuid("id").primaryKey().defaultRandom(),
   tenantId: tenantId(),
   title: text("title").notNull().default("New conversation"),
+  /** Model picked for this conversation; null follows the chat default in Settings. */
+  model: text("model"),
   createdAt: createdAt(),
   updatedAt: updatedAt(),
 });

@@ -1,5 +1,7 @@
-import { listRepos } from "@elevate/engine";
-import { FolderGit2, Lock, RefreshCw, Star } from "lucide-react";
+import { listRepos, searchRepos } from "@elevate/engine";
+import { FolderGit2, Lock, RefreshCw, SearchX, Star } from "lucide-react";
+import { Suspense } from "react";
+import { RepoSearch } from "@/components/repo-search";
 import Link from "next/link";
 import { ActionButton, RepoToggles } from "@/components/repo-toggles";
 import { Badge, Empty, SpotlightCard } from "@/components/ui";
@@ -8,11 +10,24 @@ import { ago } from "@/lib/utils";
 
 export const dynamic = "force-dynamic";
 
-export default async function ReposPage() {
+type Row = Awaited<ReturnType<typeof listRepos>>[number];
+const FILTERS: Record<string, (r: Row) => boolean> = {
+  all: () => true,
+  watched: (r) => r.watch,
+  swarm: (r) => r.allowSwarm,
+  recs: (r) => r.open + r.prs > 0,
+  unprofiled: (r) => !r.profile,
+};
+
+export default async function ReposPage({ searchParams }: { searchParams: Promise<{ q?: string; f?: string }> }) {
+  const { q = "", f = "all" } = await searchParams;
   const ctx = await getCtx();
-  const rows = await listRepos(ctx);
+  const all = await listRepos(ctx);
+  const matched = searchRepos(all, q);
+  const counts = Object.fromEntries(Object.entries(FILTERS).map(([k, fn]) => [k, matched.filter(fn).length]));
+  const rows = matched.filter(FILTERS[f] ?? FILTERS.all!);
   return (
-    <div className="mx-auto max-w-5xl px-8 py-10">
+    <div className="mx-auto max-w-5xl px-8 pb-16 pt-10">
       <div className="flex items-end justify-between gap-4">
         <div>
           <h1 className="text-2xl font-semibold tracking-tight">Repos</h1>
@@ -22,17 +37,29 @@ export default async function ReposPage() {
           <RefreshCw /> Sync
         </ActionButton>
       </div>
-      <div className="mt-8 grid gap-3">
-        {rows.length === 0 && (
+      {all.length > 0 && (
+        <div className="mt-6">
+          <Suspense>
+            <RepoSearch counts={counts} shown={rows.length} />
+          </Suspense>
+        </div>
+      )}
+      <div className="mt-4 grid gap-3">
+        {all.length === 0 && (
           <Empty icon={<FolderGit2 />} title="No repos yet">
             Connect GitHub in Settings, then sync.
           </Empty>
         )}
+        {all.length > 0 && rows.length === 0 && (
+          <Empty icon={<SearchX />} title="No repos match">
+            Try a stack (“postgres”), a domain (“fintech”) or part of a name.
+          </Empty>
+        )}
         {rows.map((r) => (
-          <SpotlightCard key={r.id} className="p-5" data-testid="repo">
+          <SpotlightCard key={r.id} className="cv-auto p-5" data-testid="repo">
             <div className="flex flex-wrap items-start gap-4">
               <div className="min-w-0 flex-1">
-                <div className="flex items-center gap-2">
+                <div className="flex flex-wrap items-center gap-2">
                   <a href={r.htmlUrl} target="_blank" rel="noreferrer" className="font-mono text-sm font-medium hover:text-sky">
                     {r.fullName}
                   </a>
@@ -47,6 +74,11 @@ export default async function ReposPage() {
                   <div className="mt-3 flex flex-wrap gap-1.5">
                     {r.profile.stack.slice(0, 6).map((s) => (
                       <Badge key={s} tone="sky">
+                        {s}
+                      </Badge>
+                    ))}
+                    {r.profile.domains.slice(0, 3).map((s) => (
+                      <Badge key={`d-${s}`} tone="olive">
                         {s}
                       </Badge>
                     ))}

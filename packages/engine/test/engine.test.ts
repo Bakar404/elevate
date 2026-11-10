@@ -8,6 +8,7 @@ import {
   ApprovalError,
   approveRecommendation,
   demoLLM,
+  discoveryFeed,
   drain,
   LifecycleError,
   planToTasks,
@@ -141,6 +142,14 @@ describe("read models and chat", () => {
     expect((await listRecommendations(ctx, "open")).every((r) => r.status === "open")).toBe(true);
     const hype = (await radar(ctx)).find((t) => /weight-space/i.test(t.name));
     expect(hype?.items[0]?.source).toBe("Growth Hacks Weekly");
+  });
+
+  it("the filtered discovery feed never surfaces hype or irrelevant items; the full feed keeps them", async () => {
+    const all = await discoveryFeed(ctx, { limit: 200 });
+    expect(all.some((i) => i.legit === false)).toBe(true);
+    const shown = await discoveryFeed(ctx, { limit: 200, hideHype: true });
+    expect(shown.length).toBeGreaterThan(0);
+    expect(shown.some((i) => i.legit === false || i.status === "irrelevant" || /weight-space/i.test(i.title))).toBe(false);
   });
 
   it("demo chat answers from the real tools and saves both messages", async () => {

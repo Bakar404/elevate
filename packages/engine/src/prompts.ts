@@ -52,6 +52,8 @@ export const TRIAGE_SYSTEM = `You triage a stream of articles, papers and posts 
 Mark an item relevant ONLY when it describes something concrete that an engineering team could adopt in an existing codebase
 (a technique, method, library, model capability, protocol, verification approach, programming paradigm).
 News, funding, opinion, hiring, politics, product launches without technical substance => not relevant.
+Some items say "Found searching ... for: <repos>": they came from a search built from those repos' stacks. Judge them with those repos in mind;
+a new library, tool or method that one of those repos could adopt counts as relevant, but a mere keyword hit (an unrelated project that shares a name) does not.
 Extract the technique precisely. Do not inflate claims beyond what the item says.`;
 
 export const MatchSchema = z.object({

@@ -1,15 +1,16 @@
 "use client";
 
-import { ArrowUp, Bot, Loader2, Plus, Square, Wrench } from "lucide-react";
+import { ArrowUp, Bot, Loader2, Plus, Square, Trash2, Wrench } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import Markdown from "react-markdown";
 import { toast } from "sonner";
 import { cn, send } from "@/lib/utils";
-import { Badge, Button, ShimmerText } from "./ui";
+import { ModelPicker, useModels } from "./model-picker";
+import { Badge, Button, Dialog, ShimmerText } from "./ui";
 
 type Tool = { id: string; name: string; ok?: boolean };
 type Msg = { id: string; role: "user" | "assistant"; content: string; tools: Tool[]; pending?: boolean };
-type Thread = { id: string; title: string };
+type Thread = { id: string; title: string; model: string | null };
 
 const SUGGESTIONS = [
   "What should I upgrade first, and why?",
@@ -51,6 +52,42 @@ export function Chat({ threads: initial, demo }: { threads: Thread[]; demo: bool
   const end = useRef<HTMLDivElement>(null);
 
   const fresh = useRef<string | null>(null);
+  const { data: catalog } = useModels();
+  /** Model picked before the first message, applied when the conversation is created. */
+  const [draftModel, setDraftModel] = useState("");
+  const [confirm, setConfirm] = useState<Thread | null>(null);
+  const activeThread = threads.find((t) => t.id === active);
+  const model = activeThread ? (activeThread.model ?? "") : draftModel;
+  const chatDefault = catalog?.prefs.chat || catalog?.prefs.pipeline || "";
+  const nameOf = (id: string) => catalog?.models.find((m) => m.id === id)?.name ?? id;
+  const defaultLabel = chatDefault ? `Default (${nameOf(chatDefault)})` : "Default model";
+
+  const pickModel = async (id: string) => {
+    if (!activeThread) return setDraftModel(id);
+    const prev = activeThread.model;
+    setThreads((ts) => ts.map((t) => (t.id === activeThread.id ? { ...t, model: id || null } : t)));
+    try {
+      await send(`/api/threads/${activeThread.id}`, { model: id || null }, "PATCH");
+    } catch (e) {
+      setThreads((ts) => ts.map((t) => (t.id === activeThread.id ? { ...t, model: prev } : t)));
+      toast.error((e as Error).message);
+    }
+  };
+
+  const remove = async (t: Thread) => {
+    setConfirm(null);
+    const before = threads;
+    const rest = threads.filter((x) => x.id !== t.id);
+    setThreads(rest);
+    if (active === t.id) setActive(rest[0]?.id ?? null);
+    try {
+      await send(`/api/threads/${t.id}`, {}, "DELETE");
+      toast.success("Conversation deleted");
+    } catch (e) {
+      setThreads(before);
+      toast.error((e as Error).message);
+    }
+  };
 
   useEffect(() => {
     if (!active) {
@@ -77,7 +114,11 @@ export function Chat({ threads: initial, demo }: { threads: Thread[]; demo: bool
   }, [msgs]);
 
   const newThread = async (keep = false) => {
-    const t = await send<Thread>("/api/threads");
+    let t = await send<Thread>("/api/threads");
+    if (draftModel) {
+      t = await send<Thread>(`/api/threads/${t.id}`, { model: draftModel }, "PATCH");
+      setDraftModel("");
+    }
     if (keep) fresh.current = t.id;
     setThreads((ts) => [t, ...ts]);
     setActive(t.id);
@@ -117,18 +158,30 @@ export function Chat({ threads: initial, demo }: { threads: Thread[]; demo: bool
   return (
     <div className="flex h-dvh">
       <aside className="flex w-60 shrink-0 flex-col border-r border-line p-3 max-lg:hidden">
-        <Button size="sm" className="w-full" onClick={() => newThread()}>
+        <Button size="sm" className="w-full" onClick={() => setActive(null)}>
           <Plus /> New chat
         </Button>
-        <div className="mt-3 flex-1 space-y-0.5 overflow-y-auto">
+        <div className="mt-3 flex-1 space-y-0.5 overflow-y-auto" data-testid="threads">
           {threads.map((t) => (
-            <button
+            <div
               key={t.id}
-              onClick={() => setActive(t.id)}
-              className={cn("block w-full truncate rounded-md px-2.5 py-1.5 text-left text-sm transition-colors", t.id === active ? "bg-white/[0.06] text-fg" : "text-muted hover:text-fg")}
+              data-testid="thread"
+              className={cn("group flex items-center rounded-md transition-colors", t.id === active ? "bg-white/[0.06] text-fg" : "text-muted hover:bg-white/[0.03] hover:text-fg")}
             >
-              {t.title}
-            </button>
+              <button onClick={() => setActive(t.id)} className="min-w-0 flex-1 truncate px-2.5 py-1.5 text-left text-sm" aria-current={t.id === active ? "true" : undefined}>
+                {t.title}
+              </button>
+              <button
+                type="button"
+                aria-label={`Delete "${t.title}"`}
+                title="Delete conversation"
+                disabled={busy && t.id === active}
+                onClick={() => setConfirm(t)}
+                className="mr-1 grid size-6 shrink-0 place-items-center rounded text-faint opacity-0 transition-opacity hover:text-danger focus-visible:opacity-100 group-hover:opacity-100 disabled:hidden"
+              >
+                <Trash2 className="size-3.5" />
+              </button>
+            </div>
           ))}
         </div>
       </aside>
@@ -205,7 +258,8 @@ export function Chat({ threads: initial, demo }: { threads: Thread[]; demo: bool
             submit();
           }}
         >
-          <div className="flex items-end gap-2 rounded-2xl border border-line-strong bg-panel p-2 transition-colors focus-within:border-sky/40">
+          <div className="rounded-2xl border border-line-strong bg-panel p-2 transition-colors focus-within:border-sky/40">
+          <div className="flex items-end gap-2">
             <textarea
               value={input}
               onChange={(e) => setInput(e.target.value)}
@@ -230,8 +284,28 @@ export function Chat({ threads: initial, demo }: { threads: Thread[]; demo: bool
               </Button>
             )}
           </div>
+          <div className="mt-1 flex items-center gap-2 px-1">
+            <ModelPicker compact label="Chat model" value={model} models={catalog?.models ?? []} defaultLabel={defaultLabel} onChange={pickModel} disabled={busy} />
+            {activeThread?.model && msgs.length > 0 && <span className="text-[11px] text-faint">applies from your next message</span>}
+          </div>
+        </div>
         </form>
       </div>
+      <Dialog
+        open={confirm !== null}
+        onOpenChange={(o) => !o && setConfirm(null)}
+        title="Delete this conversation?"
+        description={confirm ? `"${confirm.title}" and all its messages will be removed. This can't be undone.` : undefined}
+      >
+        <div className="flex justify-end gap-2">
+          <Button size="sm" variant="ghost" onClick={() => setConfirm(null)}>
+            Cancel
+          </Button>
+          <Button size="sm" variant="danger" onClick={() => confirm && remove(confirm)} data-testid="confirm-delete">
+            <Trash2 /> Delete
+          </Button>
+        </div>
+      </Dialog>
     </div>
   );
 }

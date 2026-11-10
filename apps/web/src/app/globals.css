@@ -45,6 +45,37 @@
   color-scheme: dark;
 }
 
+html {
+  scrollbar-gutter: stable;
+  scroll-padding-top: 4.5rem;
+}
+@media (prefers-reduced-motion: no-preference) {
+  html { scroll-behavior: smooth; }
+}
+
+::-webkit-scrollbar { width: 10px; height: 10px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb {
+  background: var(--color-line-strong);
+  border: 3px solid transparent;
+  border-radius: 999px;
+  background-clip: padding-box;
+}
+::-webkit-scrollbar-thumb:hover { background-color: var(--color-faint); }
+
+/* Long lists: let the browser skip layout for cards that are off screen. */
+.cv-auto {
+  content-visibility: auto;
+  contain-intrinsic-size: auto 9rem;
+}
+
+/* Horizontal chip rails that scroll without a visible bar and fade at the edges. */
+.rail {
+  scrollbar-width: none;
+  mask-image: linear-gradient(to right, transparent, #000 1.5rem, #000 calc(100% - 1.5rem), transparent);
+}
+.rail::-webkit-scrollbar { display: none; }
+
 html,
 body {
   background: var(--color-bg);

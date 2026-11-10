@@ -1,5 +1,6 @@
 import { asc, auditLog, desc, eq, events, items, recommendations, repos, sources, sql, swarms, swarmTasks, techniques, threads, messages } from "@elevate/db";
 import type { Ctx } from "./context";
+import { focusQueries } from "./ingest";
 
 /** Read models for the UI. Everything the pages show comes from here. */
 
@@ -186,9 +187,10 @@ export async function activityGraph(ctx: Ctx, maxRepos = 12, maxTechniques = 8) 
 export async function radar(ctx: Ctx) {
   const techs = await ctx.db.select().from(techniques).orderBy(desc(techniques.firstSeenAt)).limit(200);
   const its = await ctx.db
-    .select({ techniqueId: items.techniqueId, title: items.title, url: items.url, source: sources.name, kind: sources.kind })
+    .select({ techniqueId: items.techniqueId, title: items.title, url: items.url, source: sources.name, kind: sources.kind, signals: items.signals })
     .from(items)
     .innerJoin(sources, eq(items.sourceId, sources.id));
+  const name = await repoNames(ctx);
   const recs = await ctx.db
     .select({ techniqueId: recommendations.techniqueId, status: recommendations.status })
     .from(recommendations);
@@ -201,12 +203,71 @@ export async function radar(ctx: Ctx) {
     claims: t.claims,
     legitimacy: t.legitimacy,
     firstSeenAt: t.firstSeenAt,
-    items: its.filter((i) => i.techniqueId === t.id),
+    items: its.filter((i) => i.techniqueId === t.id).map(({ signals: _s, ...i }) => i),
+    /** Repos whose own web search surfaced this technique. */
+    foundFor: [...new Set(its.filter((i) => i.techniqueId === t.id).flatMap((i) => i.signals.focus?.repoIds ?? []))].map(name).filter(Boolean) as string[],
     matches: recs.filter((r) => r.techniqueId === t.id).length,
     open: recs.filter((r) => r.techniqueId === t.id && r.status === "open").length,
   }));
 }
 
+async function repoNames(ctx: Ctx) {
+  const rows = await ctx.db.select({ id: repos.id, fullName: repos.fullName }).from(repos);
+  const m = new Map(rows.map((r) => [r.id, r.fullName]));
+  return (id: string) => m.get(id);
+}
+
+export type FeedItem = Awaited<ReturnType<typeof discoveryFeed>>[number];
+
+/** The latest things the sweep pulled in, newest first; `repoOnly` keeps just what a repo's own search found. */
+/** `hideHype` drops items judged irrelevant or whose technique failed the legitimacy gate (for surfaces that should only show signal). */
+export async function discoveryFeed(ctx: Ctx, opts: { limit?: number; repoOnly?: boolean; hideHype?: boolean } = {}) {
+  const limit = opts.limit ?? 60;
+  const rows = await ctx.db
+    .select({
+      id: items.id,
+      title: items.title,
+      url: items.url,
+      status: items.status,
+      signals: items.signals,
+      publishedAt: items.publishedAt,
+      createdAt: items.createdAt,
+      source: sources.name,
+      kind: sources.kind,
+      techniqueId: items.techniqueId,
+      technique: techniques.name,
+      legit: sql<boolean | null>`(${techniques.legitimacy}->>'passed')::boolean`,
+    })
+    .from(items)
+    .innerJoin(sources, eq(items.sourceId, sources.id))
+    .leftJoin(techniques, eq(items.techniqueId, techniques.id))
+    .where(
+      sql.join(
+        [
+          sql`true`,
+          ...(opts.repoOnly ? [sql`${items.signals} ? 'focus'`] : []),
+          ...(opts.hideHype ? [sql`${items.status} <> 'irrelevant'`, sql`coalesce((${techniques.legitimacy}->>'passed')::boolean, true)`] : []),
+        ],
+        sql` and `,
+      ),
+    )
+    .orderBy(desc(items.createdAt), desc(items.publishedAt))
+    .limit(limit);
+  const name = await repoNames(ctx);
+  return rows.map(({ signals, ...r }) => ({
+    ...r,
+    points: signals.points ?? null,
+    stars: signals.stars ?? null,
+    query: signals.focus?.query ?? null,
+    repos: (signals.focus?.repoIds ?? []).map(name).filter(Boolean) as string[],
+  }));
+}
+
+/** What the next sweep will search for on behalf of the repos (shown so the targeting is inspectable). */
+export async function searchPlan(ctx: Ctx) {
+  const name = await repoNames(ctx);
+  return (await focusQueries(ctx)).map((q) => ({ term: q.term, kind: q.kind, repos: q.repoIds.map(name).filter(Boolean) as string[] }));
+}
 export async function listSources(ctx: Ctx) {
   return ctx.db.select().from(sources).orderBy(desc(sources.credibility));
 }

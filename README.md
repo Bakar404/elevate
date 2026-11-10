@@ -33,6 +33,10 @@ your repos ─► profiles + embeddings ─► matcher ─► candidates ─► 
                                      swarm: plan → implement → test → review ─► draft PR
 ```
 
+Sources come in two kinds. **Feeds** (HN front page, lab blogs, arXiv listings) are the same for everyone. **Searches for your repos** query HN, arXiv and GitHub with terms taken from each watched repo's profile (its stack and domains, e.g. `pgvector`, `speculative decoding`). Every repo gets at least one query before shared terms fill the budget (`ELEVATE_FOCUS_QUERIES`, default 8). The home page and the Radar show those terms and which repos they serve. Anything found that way is matched to those repos first.
+
+**Models.** Settings has two pickers: one for the background agents (triage, the gates, swarm planning) and a default for chat. Each conversation can also pick its own model from the chat composer. For a reply, the conversation's model wins, then the chat default, then the background model, then the provider default. The list comes from your Copilot account (the cost multiplier is shown, and models your plan disables are greyed out). With a BYOK provider, type the model id. Conversations can be deleted from the chat list.
+
 See [docs/architecture.md](docs/architecture.md) for the packages, jobs and data model, and [docs/design.md](docs/design.md) for the UI.
 
 ## Built proof-first

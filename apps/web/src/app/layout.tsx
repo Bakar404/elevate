@@ -10,7 +10,7 @@ export const metadata: Metadata = {
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
-    <html lang="en" className="dark">
+    <html lang="en" className="dark" data-scroll-behavior="smooth">
       <body className="min-h-dvh">
         <Providers>{children}</Providers>
         <Toaster theme="dark" position="bottom-right" toastOptions={{ className: "!bg-panel !border-line-strong !text-fg" }} />

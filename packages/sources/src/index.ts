@@ -1,4 +1,7 @@
 import { XMLParser } from "fast-xml-parser";
+import { parseGitHubSearch, type FocusBackend } from "./focus";
+
+export * from "./focus";
 
 export type RawItem = {
   externalId?: string;
@@ -7,11 +10,11 @@ export type RawItem = {
   author?: string;
   publishedAt?: Date;
   content?: string;
-  signals?: { points?: number; comments?: number; hnId?: string };
+  signals?: { points?: number; comments?: number; hnId?: string; stars?: number; focus?: { query: string; repoIds: string[] } };
 };
 
 export type SourceDef = {
-  kind: "hn" | "rss" | "arxiv";
+  kind: "hn" | "rss" | "arxiv" | "github";
   name: string;
   url: string;
   credibility: number;
@@ -105,12 +108,9 @@ type HnHit = {
   story_text?: string | null;
 };
 
-/** Hacker News via the Algolia API; `url` is the full search URL (points filter etc.). */
-export async function fetchHackerNews(src: SourceDef, fetcher: Fetcher = defaultFetch): Promise<RawItem[]> {
-  const res = await fetcher(src.url);
-  if (!res.ok) throw new Error(`${src.name}: HTTP ${res.status}`);
-  const body = JSON.parse(await res.text()) as { hits: HnHit[] };
-  return body.hits
+export function parseHackerNews(body: string): RawItem[] {
+  const { hits = [] } = JSON.parse(body) as { hits?: HnHit[] };
+  return hits
     .filter((h) => h.title)
     .map((h) => ({
       externalId: `hn:${h.objectID}`,
@@ -123,6 +123,34 @@ export async function fetchHackerNews(src: SourceDef, fetcher: Fetcher = default
     }));
 }
 
+/** Hacker News via the Algolia API; `url` is the full search URL (points filter etc.). */
+export async function fetchHackerNews(src: SourceDef, fetcher: Fetcher = defaultFetch): Promise<RawItem[]> {
+  const res = await fetcher(src.url);
+  if (!res.ok) throw new Error(`${src.name}: HTTP ${res.status}`);
+  return parseHackerNews(await res.text());
+}
+
+/** Parse a focused-search response from any backend. */
+export function parseFocusResponse(backend: FocusBackend, body: string): RawItem[] {
+  switch (backend) {
+    case "hn":
+      return parseHackerNews(body);
+    case "arxiv":
+      return parseFeed(body);
+    case "github":
+      return parseGitHubSearch(body);
+  }
+}
+
+/** Focused sources have no fixed URL: their queries are built from the watched repos on every sweep. */
+export const FOCUS_SCHEME = "focus://";
+export function focusBackend(url: string): FocusBackend | undefined {
+  if (!url.startsWith(FOCUS_SCHEME)) return undefined;
+  const b = url.slice(FOCUS_SCHEME.length);
+  return b === "hn" || b === "arxiv" || b === "github" ? b : undefined;
+}
+
+export { defaultFetch };
 /** HN discussion signal for an arbitrary URL or phrase (used by the legitimacy gate). */
 export async function hackerNewsSignal(query: string, fetcher: Fetcher = defaultFetch) {
   const url = `https://hn.algolia.com/api/v1/search?tags=story&hitsPerPage=10&query=${encodeURIComponent(query)}`;
@@ -148,6 +176,8 @@ export async function fetchSource(src: SourceDef, fetcher?: Fetcher): Promise<Ra
     case "rss":
     case "arxiv":
       return fetchFeed(src, fetcher);
+    case "github":
+      throw new Error(`${src.name}: GitHub sources are focused-only`);
   }
 }
 
@@ -174,6 +204,10 @@ export function defaultSources(): SourceDef[] {
       url: "https://export.arxiv.org/api/query?search_query=cat:cs.SE+OR+cat:cs.PL+OR+cat:cs.LG&sortBy=submittedDate&sortOrder=descending&max_results=60",
       credibility: 60,
     },
+    // Searched with terms from your repos' profiles on every sweep.
+    { kind: "hn", name: "Hacker News · for your repos", url: `${FOCUS_SCHEME}hn`, credibility: 45, config: { focus: true } },
+    { kind: "arxiv", name: "arXiv · for your repos", url: `${FOCUS_SCHEME}arxiv`, credibility: 60, config: { focus: true } },
+    { kind: "github", name: "New on GitHub · for your repos", url: `${FOCUS_SCHEME}github`, credibility: 50, config: { focus: true } },
   ];
 }
 

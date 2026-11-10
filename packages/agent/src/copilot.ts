@@ -75,6 +75,32 @@ export function getCopilotClient(): Promise<CopilotClient> {
   return g[CLIENT_KEY];
 }
 
+export type ModelOption = {
+  id: string;
+  name: string;
+  /** Who serves it (e.g. "anthropic", "openai"), when the runtime says. */
+  vendor?: string;
+  /** Premium-request multiplier; 0 means included in the plan. */
+  multiplier?: number;
+  /** False when the account's Copilot policy has it switched off. */
+  enabled: boolean;
+};
+
+/** Models the signed-in Copilot seat can use, enabled first, cheaper first. */
+export async function listCopilotModels(): Promise<ModelOption[]> {
+  const client = await getCopilotClient();
+  const models = await client.listModels();
+  return models
+    .map((m) => ({
+      id: m.id,
+      name: m.name || m.id,
+      vendor: (m.provider as { name?: string; id?: string } | undefined)?.name ?? (m.provider as { id?: string } | undefined)?.id,
+      multiplier: m.billing?.multiplier,
+      enabled: m.policy?.state !== "disabled",
+    }))
+    .sort((a, b) => Number(b.enabled) - Number(a.enabled) || (a.multiplier ?? 1) - (b.multiplier ?? 1) || a.name.localeCompare(b.name));
+}
+
 export async function stopCopilotClient() {
   const g = globalThis as G;
   const pending = g[CLIENT_KEY];

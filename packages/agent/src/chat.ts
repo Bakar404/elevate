@@ -9,7 +9,8 @@ export type ChatEvent =
   | { type: "error"; message: string }
   | { type: "done" };
 
-type ChatEntry = { session: CopilotSession; lastUsed: number; busy: boolean };
+type ChatEntry = { session: CopilotSession; lastUsed: number; busy: boolean; configKey: string };
+const configKey = (c: ModelConfig) => `${c.provider}|${c.model ?? ""}|${c.baseUrl ?? ""}`;
 const KEY = Symbol.for("elevate.chat");
 type G = typeof globalThis & { [KEY]?: Map<string, ChatEntry> };
 
@@ -35,6 +36,12 @@ export type ChatTurn = {
 export async function runChatTurn(turn: ChatTurn): Promise<{ text: string; toolCalls: { name: string; args?: unknown }[] }> {
   const reg = registry();
   let entry = reg.get(turn.threadId);
+  // Switching models mid-conversation: start a new session on the new model and replay the history into it.
+  if (entry && !entry.busy && entry.configKey !== configKey(turn.config)) {
+    reg.delete(turn.threadId);
+    void entry.session.disconnect().catch(() => {});
+    entry = undefined;
+  }
   let prompt = turn.prompt;
   if (!entry) {
     const session = await createSession({
@@ -44,7 +51,7 @@ export async function runChatTurn(turn: ChatTurn): Promise<{ text: string; toolC
       builtIns: ["web_fetch"],
       streaming: true,
     });
-    entry = { session, lastUsed: Date.now(), busy: false };
+    entry = { session, lastUsed: Date.now(), busy: false, configKey: configKey(turn.config) };
     reg.set(turn.threadId, entry);
     if (turn.history.length) {
       const transcript = turn.history

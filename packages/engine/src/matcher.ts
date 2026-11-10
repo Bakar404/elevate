@@ -1,5 +1,5 @@
 import { cosine } from "@elevate/agent";
-import { and, emit, enqueue, eq, recommendations, repos, techniques } from "@elevate/db";
+import { and, emit, enqueue, eq, items, recommendations, repos, techniques } from "@elevate/db";
 import type { Ctx } from "./context";
 import { watchedProfiledRepos } from "./profiler";
 import { MATCH_SYSTEM, MatchSchema } from "./prompts";
@@ -21,10 +21,15 @@ export async function matchTechnique(ctx: Ctx, techniqueId: string, onlyRepoIds?
       (r) => r.repoId,
     ),
   );
+  // Repos whose own search surfaced this technique are always considered, ahead of embedding neighbours.
+  const focused = new Map<string, string>();
+  for (const i of await ctx.db.select({ signals: items.signals }).from(items).where(eq(items.techniqueId, techniqueId))) {
+    for (const id of i.signals.focus?.repoIds ?? []) if (!focused.has(id)) focused.set(id, i.signals.focus!.query);
+  }
   const candidates = (await watchedProfiledRepos(ctx, tech.tenantId))
     .filter((r) => !existing.has(r.id) && (!onlyRepoIds || onlyRepoIds.includes(r.id)))
-    .map((r) => ({ repo: r, sim: tech.embedding && r.embedding ? cosine(tech.embedding, r.embedding) : 0 }))
-    .sort((a, b) => b.sim - a.sim)
+    .map((r) => ({ repo: r, sim: tech.embedding && r.embedding ? cosine(tech.embedding, r.embedding) : 0, foundBy: focused.get(r.id) }))
+    .sort((a, b) => Number(!!b.foundBy) - Number(!!a.foundBy) || b.sim - a.sim)
     .slice(0, TOP_K);
   if (!candidates.length) return 0;
 
@@ -40,7 +45,9 @@ export async function matchTechnique(ctx: Ctx, techniqueId: string, onlyRepoIds?
       `Prerequisites: ${tech.claims.prerequisites.join(", ") || "none"}`,
       ``,
       `Repositories:`,
-      ...candidates.map((c) => `\n### ${c.repo.fullName}\n${c.repo.profileText}`),
+      ...candidates.map(
+        (c) => `\n### ${c.repo.fullName}${c.foundBy ? `\n(This technique surfaced in a search for "${c.foundBy}" run for this repo.)` : ""}\n${c.repo.profileText}`,
+      ),
     ].join("\n"),
   });
 

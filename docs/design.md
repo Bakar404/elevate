@@ -62,6 +62,20 @@ A calm, dark work surface over a living, dithered landscape. The background carr
   - Hovering a node dims everything that isn't connected to it.
   - All motion is SVG/SMIL and CSS and stops under `prefers-reduced-motion`.
 - **Logo:** five drafts are available at `/brand` (Ascent, Summit, Steps, Lift, Contour). Picking one sets a cookie, and the sidebar and map hub update. The favicon is the Ascent mark.
+
+## Scrolling and search
+
+- **Long pages scroll well:** a thin progress bar at the top, a back-to-top button after a screen of scrolling, sticky tab bars (inbox, radar) and a sticky repo search. Long lists use `content-visibility: auto`. Smooth scrolling is on only when reduced motion is not requested.
+- **Repo search** (`/repos`, `/` to focus) ranks across name, description, language, topics, profile stack and domains. Every word must match; exact matches beat prefix matches, which beat substring matches. Case and accents are ignored. The query and filter (all, watched, swarm, has recs, unprofiled) live in the URL, so results can be shared and survive reloads.
+- **⌘K** also finds repos by stack or domain and techniques by category or by the repo they were found for.
+- **Search plan:** the home page and Radar show the terms the next sweep will search for each repo. Items found that way carry "Found searching" chips. The home page's "Fresh for your repos" never shows hype or irrelevant items.
+
+## Models and chat
+
+- The model picker is a popover with a cmdk list showing each model's cost ("included" or N×). Models your plan disables appear greyed out, and a "Use <id>" row accepts any id (needed for BYOK).
+- Settings sets the background model and the chat default. The chat composer sets the model per conversation, and a change takes effect from the next message.
+- Deleting a conversation is a hover or focus trash button, followed by a confirmation dialog. It is removed optimistically and restored if the request fails.
+
 ## Interaction
 
 - Every action is reachable from ⌘K, and every destructive or writing action asks for confirmation. Approving a recommendation shows exactly which repo, which executor and which budget.

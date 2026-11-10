@@ -1,0 +1,19 @@
+{
+  "name": "@elevate/executors",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc -p ."
+  },
+  "dependencies": {
+    "@elevate/db": "workspace:*",
+    "@elevate/agent": "workspace:*",
+    "@elevate/github": "workspace:*",
+    "zod": "^4.6.7",
+    "@elevate/policy": "workspace:*"
+  }
+}

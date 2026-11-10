@@ -1,0 +1,28 @@
+{
+  "name": "elevate",
+  "private": true,
+  "type": "module",
+  "packageManager": "pnpm@11.19.0",
+  "engines": {
+    "node": ">=22.12.0"
+  },
+  "scripts": {
+    "dev": "pnpm --filter @elevate/web dev",
+    "build": "pnpm --filter @elevate/web build",
+    "start": "pnpm --filter @elevate/web start",
+    "worker": "pnpm --filter @elevate/worker start",
+    "db:generate": "pnpm --filter @elevate/db generate",
+    "typecheck": "pnpm -r --parallel typecheck",
+    "test": "vitest run",
+    "test:e2e": "pnpm --filter @elevate/web test:e2e",
+    "eval:gates": "tsx scripts/eval-gates.ts",
+    "smoke:copilot": "tsx scripts/smoke-copilot.ts",
+    "proof": "node proof/run.mjs"
+  },
+  "devDependencies": {
+    "@types/node": "^24.0.0",
+    "tsx": "^4.23.15",
+    "typescript": "^7.0.2",
+    "vitest": "^5.1.0"
+  }
+}

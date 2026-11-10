@@ -1,0 +1,299 @@
+{
+	"verus": "C:\\Users\\AABDEL~1\\AppData\\Local\\Temp\\verus\\verus-arm64-win\\verus.exe",
+	"baseline": {
+		"proved": true,
+		"summary": "verification results:: 12 verified, 0 errors"
+	},
+	"mutants": [
+		{
+			"id": "ML1",
+			"target": "L1",
+			"bug": "the prior outweighs the reviewer",
+			"rejected": true,
+			"caughtBy": [
+				"L1",
+				"L6"
+			],
+			"ok": true
+		},
+		{
+			"id": "ML2",
+			"target": "L2",
+			"bug": "the score can exceed 100 (spec and code agree)",
+			"rejected": true,
+			"caughtBy": [
+				"L2"
+			],
+			"ok": true
+		},
+		{
+			"id": "ML3",
+			"target": "L3",
+			"bug": "more evidence lowers the score (spec and code agree)",
+			"rejected": true,
+			"caughtBy": [
+				"L3"
+			],
+			"ok": true
+		},
+		{
+			"id": "ML4",
+			"target": "L4",
+			"bug": "the reviewer's veto is ignored",
+			"rejected": true,
+			"caughtBy": [
+				"L4",
+				"L6"
+			],
+			"ok": true
+		},
+		{
+			"id": "ML5",
+			"target": "L5",
+			"bug": "the model alone can pass a technique",
+			"rejected": true,
+			"caughtBy": [
+				"L5",
+				"L6"
+			],
+			"ok": true
+		},
+		{
+			"id": "ML6",
+			"target": "L6",
+			"bug": "a score exactly at the threshold fails",
+			"rejected": true,
+			"caughtBy": [
+				"L6"
+			],
+			"ok": true
+		},
+		{
+			"id": "MS1",
+			"target": "S1",
+			"bug": "Gate 2 ignores Gate 1",
+			"rejected": true,
+			"caughtBy": [
+				"S1",
+				"S5"
+			],
+			"ok": true
+		},
+		{
+			"id": "MS2",
+			"target": "S2",
+			"bug": "the reviewer's 'unsound' is ignored",
+			"rejected": true,
+			"caughtBy": [
+				"S2",
+				"S5"
+			],
+			"ok": true
+		},
+		{
+			"id": "MS3",
+			"target": "S3",
+			"bug": "an unmeasurable change can pass",
+			"rejected": true,
+			"caughtBy": [
+				"S3",
+				"S5"
+			],
+			"ok": true
+		},
+		{
+			"id": "MS4",
+			"target": "S4",
+			"bug": "high risk gets no margin (spec and code agree)",
+			"rejected": true,
+			"caughtBy": [
+				"S4"
+			],
+			"ok": true
+		},
+		{
+			"id": "MS5",
+			"target": "S5",
+			"bug": "a score exactly at the bar fails",
+			"rejected": true,
+			"caughtBy": [
+				"S5"
+			],
+			"ok": true
+		},
+		{
+			"id": "MS6",
+			"target": "S6",
+			"bug": "the rank under-weights soundness",
+			"rejected": true,
+			"caughtBy": [
+				"S6"
+			],
+			"ok": true
+		},
+		{
+			"id": "MS6m",
+			"target": "S6",
+			"bug": "a sounder change ranks lower (spec and code agree)",
+			"rejected": true,
+			"caughtBy": [
+				"S6"
+			],
+			"ok": true
+		},
+		{
+			"id": "MT1",
+			"target": "T1",
+			"bug": "a candidate can be approved before the gates",
+			"rejected": true,
+			"caughtBy": [
+				"T1"
+			],
+			"ok": true
+		},
+		{
+			"id": "MT2",
+			"target": "T2",
+			"bug": "a swarm starts from open, without approval",
+			"rejected": true,
+			"caughtBy": [
+				"T2"
+			],
+			"ok": true
+		},
+		{
+			"id": "MT3",
+			"target": "T3",
+			"bug": "a rejected recommendation reopens straight into the inbox",
+			"rejected": true,
+			"caughtBy": [
+				"T3",
+				"T6"
+			],
+			"ok": true
+		},
+		{
+			"id": "MT4",
+			"target": "T4",
+			"bug": "a gated-out recommendation can be rejected and reopened around the gates",
+			"rejected": true,
+			"caughtBy": [
+				"T4"
+			],
+			"ok": true
+		},
+		{
+			"id": "MT5",
+			"target": "T5",
+			"bug": "an opened PR can be rejected and reopened",
+			"rejected": true,
+			"caughtBy": [
+				"T5"
+			],
+			"ok": true
+		},
+		{
+			"id": "MT6",
+			"target": "T6",
+			"bug": "a rejected recommendation can't be reopened",
+			"rejected": true,
+			"caughtBy": [
+				"T6"
+			],
+			"ok": true
+		},
+		{
+			"id": "MT7",
+			"target": "T7",
+			"bug": "replay starts past the gates",
+			"rejected": true,
+			"caughtBy": [
+				"T7"
+			],
+			"ok": true
+		},
+		{
+			"id": "MW1",
+			"target": "W1",
+			"bug": "force-push is not forbidden",
+			"rejected": true,
+			"caughtBy": [
+				"W1",
+				"W7"
+			],
+			"ok": true
+		},
+		{
+			"id": "MW2",
+			"target": "W2",
+			"bug": "an open (unapproved) recommendation may write",
+			"rejected": true,
+			"caughtBy": [
+				"W2",
+				"W7"
+			],
+			"ok": true
+		},
+		{
+			"id": "MW3",
+			"target": "W3",
+			"bug": "the allow-list is skipped",
+			"rejected": true,
+			"caughtBy": [
+				"W3",
+				"W7"
+			],
+			"ok": true
+		},
+		{
+			"id": "MW4",
+			"target": "W4",
+			"bug": "a swarm may write to another repo",
+			"rejected": true,
+			"caughtBy": [
+				"W4",
+				"W7"
+			],
+			"ok": true
+		},
+		{
+			"id": "MW5",
+			"target": "W5",
+			"bug": "a ready-for-review PR may be opened",
+			"rejected": true,
+			"caughtBy": [
+				"W5",
+				"W7"
+			],
+			"ok": true
+		},
+		{
+			"id": "MW6",
+			"target": "W6",
+			"bug": "the agent-turn budget is not enforced",
+			"rejected": true,
+			"caughtBy": [
+				"W6",
+				"W7"
+			],
+			"ok": true
+		},
+		{
+			"id": "MW7",
+			"target": "W7",
+			"bug": "draft work is refused everywhere (over-strict)",
+			"rejected": true,
+			"caughtBy": [
+				"W7"
+			],
+			"ok": true
+		}
+	],
+	"draftGap": {
+		"withoutW7": {
+			"todayProves": true,
+			"mw7Proves": true
+		},
+		"gapShown": true
+	}
+}

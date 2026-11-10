@@ -1,0 +1,13 @@
+{
+  "name": "@elevate/policy",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "The policy kernel: gates, lifecycle and write guard. Proved in proof/verified (Verus) and checked against it by test/differential.test.ts.",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc -p ."
+  }
+}

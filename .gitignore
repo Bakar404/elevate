@@ -1,0 +1,16 @@
+node_modules/
+.next/
+out/
+dist/
+coverage/
+.data/
+.env
+.env.local
+*.log
+test-results/
+playwright-report/
+.turbo/
+next-env.d.ts
+*.tsbuildinfo
+proof/results/logs/
+proof/verified/target/

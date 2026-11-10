@@ -1,6 +1,10 @@
 import { CopilotClient, ToolSet, approveAll, defineTool, type CopilotSession } from "@github/copilot-sdk";
+import { execFile } from "node:child_process";
+import { promisify } from "node:util";
 import type { z } from "zod";
 import { responseSchema } from "./schema";
+
+const exec = promisify(execFile);
 
 export type ProviderKind = "copilot" | "anthropic" | "openai" | "azure";
 
@@ -22,6 +26,32 @@ export function modelConfigFromEnv(): ModelConfig {
   };
 }
 
+/**
+ * Token whose Copilot seat pays for model calls: COPILOT_GITHUB_TOKEN -> GITHUB_TOKEN ->
+ * `gh auth token [--user GITHUB_USER]`. Copilot usage then bills the same account that owns
+ * the repos, not whichever account happens to be logged in to the Copilot CLI. Returns
+ * undefined only when none is available, which falls back to that logged-in user.
+ */
+export async function resolveCopilotToken(
+  env: NodeJS.ProcessEnv = process.env,
+  ghToken: (user?: string) => Promise<string> = ghAuthToken,
+): Promise<string | undefined> {
+  if (env.COPILOT_GITHUB_TOKEN) return env.COPILOT_GITHUB_TOKEN;
+  if (env.GITHUB_TOKEN) return env.GITHUB_TOKEN;
+  try {
+    return (await ghToken(env.GITHUB_USER || undefined)).trim() || undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+async function ghAuthToken(user?: string): Promise<string> {
+  const { stdout } = await exec("gh", ["auth", "token", ...(user ? ["--user", user] : [])], {
+    windowsHide: true,
+  });
+  return stdout;
+}
+
 const CLIENT_KEY = Symbol.for("elevate.copilot");
 type G = typeof globalThis & { [CLIENT_KEY]?: Promise<CopilotClient> };
 
@@ -30,7 +60,7 @@ export function getCopilotClient(): Promise<CopilotClient> {
   const g = globalThis as G;
   if (!g[CLIENT_KEY]) {
     g[CLIENT_KEY] = (async () => {
-      const token = process.env.COPILOT_GITHUB_TOKEN;
+      const token = await resolveCopilotToken();
       const client = new CopilotClient({
         ...(token ? { gitHubToken: token } : {}),
         logLevel: "error",

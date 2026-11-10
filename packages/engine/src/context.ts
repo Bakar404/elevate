@@ -1,5 +1,5 @@
-import { CopilotLLM, defaultEmbedder, type Embedder, type LLM } from "@elevate/agent";
-import { getDb, type DB } from "@elevate/db";
+import { CopilotLLM, defaultEmbedder, modelConfigFromEnv, type Embedder, type JsonRequest, type LLM, type ModelConfig } from "@elevate/agent";
+import { getDb, getSecret, getSetting, type DB } from "@elevate/db";
 import { FakeGitHub, octokitWriter, type GitHubWriter } from "@elevate/executors";
 import { getOctokit, resolveGitHubToken, type Octokit } from "@elevate/github";
 import type { Fetcher } from "@elevate/sources";
@@ -19,6 +19,24 @@ export type Ctx = {
 };
 
 export const isDemo = () => process.env.ELEVATE_DEMO === "1";
+
+/** Env defaults, overridden by what the user saved in Settings (key stored encrypted). */
+export async function resolveModelConfig(db: DB): Promise<ModelConfig> {
+  const env = modelConfigFromEnv();
+  const saved = await getSetting<Partial<ModelConfig>>(db, "model", {});
+  const provider = saved.provider ?? env.provider;
+  const apiKey = provider === "copilot" ? undefined : ((await getSecret(db, "provider_api_key")) ?? env.apiKey);
+  return { provider, model: saved.model || env.model, baseUrl: saved.baseUrl || env.baseUrl, apiKey };
+}
+
+/** Reads the model config per call so Settings changes apply without restarting the worker. */
+class ConfiguredLLM implements LLM {
+  readonly name = "copilot";
+  constructor(private readonly db: DB) {}
+  async json<T>(req: JsonRequest<T>): Promise<T> {
+    return new CopilotLLM(await resolveModelConfig(this.db)).json(req);
+  }
+}
 
 const offline: Fetcher = async () => {
   throw new Error("offline demo");
@@ -48,7 +66,7 @@ export async function defaultCtx(): Promise<Ctx> {
   return {
     db,
     demo,
-    llm: demo || process.env.ELEVATE_FAKE_LLM ? demoLLM() : new CopilotLLM(),
+    llm: demo || process.env.ELEVATE_FAKE_LLM ? demoLLM() : new ConfiguredLLM(db),
     embedder: defaultEmbedder(),
     github,
     writer: async () => (demo ? demoGitHub() : octokitWriter(await github())),

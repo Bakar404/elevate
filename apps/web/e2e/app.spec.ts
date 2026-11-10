@@ -1,0 +1,87 @@
+import { expect, test, type Page } from "@playwright/test";
+
+type Rec = { id: string; status: string; repo: string; title: string };
+
+async function waitForOpenRecs(page: Page): Promise<Rec[]> {
+  let open: Rec[] = [];
+  await expect
+    .poll(async () => {
+      open = (await (await page.request.get("/api/recommendations?status=open")).json()) as Rec[];
+      return open.length;
+    }, { timeout: 90_000 })
+    .toBeGreaterThan(0);
+  return open;
+}
+
+test("inbox renders the dither background and only gated recommendations", async ({ page }) => {
+  await waitForOpenRecs(page);
+  await page.goto("/");
+  await expect(page.getByTestId("demo-badge")).toBeVisible();
+  const canvas = page.getByTestId("dither");
+  await expect(canvas).toHaveAttribute("data-ready", "true");
+  const painted = await canvas.evaluate((c: HTMLCanvasElement) => {
+    const g = c.getContext("2d")!;
+    const { data } = g.getImageData(0, 0, c.width, c.height);
+    const colours = new Set<number>();
+    for (let i = 0; i < data.length; i += 4 * 97) colours.add((data[i]! << 16) | (data[i + 1]! << 8) | data[i + 2]!);
+    return colours.size;
+  });
+  expect(painted).toBeGreaterThanOrEqual(3);
+  await expect(page.getByTestId("rec-card").first()).toBeVisible();
+  await expect(page.getByText(/weight-space/i)).toHaveCount(0);
+});
+
+test("command palette opens with the keyboard and navigates", async ({ page }) => {
+  await page.goto("/");
+  await page.keyboard.press("ControlOrMeta+k");
+  const input = page.getByPlaceholder("Jump to a page, recommendation or action…");
+  await expect(input).toBeVisible();
+  await input.fill("radar");
+  await page.keyboard.press("Enter");
+  await expect(page).toHaveURL(/\/radar/);
+  await expect(page.getByTestId("technique").first()).toBeVisible();
+});
+
+test("hype is filtered on the radar with its reasons", async ({ page }) => {
+  await page.goto("/radar?show=hype");
+  await expect(page.getByText(/weight-space/i).first()).toBeVisible();
+  await expect(page.getByText(/judged it not legitimate/i).first()).toBeVisible();
+});
+
+test("approve → allow repo → swarm → draft PR, with history and audit trail", async ({ page }) => {
+  const [rec] = await waitForOpenRecs(page);
+  await page.goto(`/r/${rec!.id}`);
+  await expect(page.getByTestId("gate-legitimacy")).toContainText("passed");
+  await expect(page.getByTestId("gate-soundness")).toContainText("passed");
+  await page.getByTestId("approve").click();
+  const allow = page.getByTestId("allow-repo");
+  if (await allow.isVisible()) {
+    await expect(page.getByTestId("launch")).toBeDisabled();
+    await allow.click();
+  }
+  await page.getByTestId("launch").click();
+  await expect(page.getByText("draft PR open").first()).toBeVisible({ timeout: 90_000 });
+  await expect(page.locator('[data-testid="history"] [data-event="pr"]')).toBeVisible();
+
+  await page.getByRole("link", { name: /fake · succeeded/ }).click();
+  await expect(page.getByTestId("pr-link")).toHaveAttribute("href", /\/pull\//);
+  await expect(page.getByTestId("task-graph")).toBeVisible();
+  await expect(page.getByTestId("audits")).toContainText(rec!.repo);
+
+  const after = (await (await page.request.post(`/api/recommendations/${rec!.id}/approve`, { data: { executor: "fake" }, headers: { origin: new URL(page.url()).origin } })).status());
+  expect(after).toBe(409);
+});
+
+test("chat streams an answer with tool calls", async ({ page }) => {
+  await page.goto("/chat");
+  await page.getByLabel("Message").fill("What should I upgrade first?");
+  await page.getByLabel("Send").click();
+  await expect(page.getByTestId("tool-chip").first()).toBeVisible();
+  await expect(page.getByTestId("messages")).toContainText(/ledger-api|llm-router/);
+});
+
+test("settings shows the proof receipt", async ({ page }) => {
+  await page.goto("/settings");
+  await expect(page.getByTestId("proof-card")).toContainText(/receipt: pass/i);
+  await expect(page.getByTestId("proof-card")).toContainText("27 of 27 mutants");
+});

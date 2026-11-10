@@ -1,5 +1,6 @@
 import type { z } from "zod";
 import { createSession, modelConfigFromEnv, type ModelConfig } from "./copilot";
+import { responseSchema } from "./schema";
 
 export type JsonRequest<T> = {
   /** Stable task name; used for logging and by the fake LLM to pick a canned answer. */
@@ -22,7 +23,7 @@ export class CopilotLLM implements LLM {
   async json<T>(req: JsonRequest<T>): Promise<T> {
     const session = await createSession({ config: this.config, system: req.system });
     try {
-      return (await session.sendAndWait(req.prompt as never, req.schema as never, req.timeoutMs ?? 180_000)) as T;
+      return (await session.sendAndWait(req.prompt as never, responseSchema(req.schema) as never, req.timeoutMs ?? 180_000)) as T;
     } finally {
       await session.disconnect().catch(() => {});
     }

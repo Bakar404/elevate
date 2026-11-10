@@ -72,7 +72,7 @@ export async function scheduleTick(ctx: Ctx, now = Date.now()) {
   return due;
 }
 
-export type WorkerHandle = { stop: () => Promise<void>; idle: () => Promise<void> };
+export type WorkerHandle = { stop: () => Promise<void>; idle: () => Promise<void>; kick: () => void };
 
 /**
  * A small in-process worker. Swarms can wait on cloud agents for a long time, so they run
@@ -84,7 +84,7 @@ export function startWorker(ctx: Ctx, opts: { pollMs?: number; maxSwarms?: numbe
   const swarmsRunning = new Set<Promise<void>>();
   let stopped = false;
   let wake: (() => void) | undefined;
-  let idleWaiters: (() => void)[] = [];
+  const idleWaiters: (() => void)[] = [];
 
   const loop = (async () => {
     await recoverStaleJobs(ctx.db);
@@ -118,6 +118,10 @@ export function startWorker(ctx: Ctx, opts: { pollMs?: number; maxSwarms?: numbe
       stopped = true;
       wake?.();
       await loop;
+    },
+    /** Check the queue now instead of at the next poll (call after enqueueing from a request). */
+    kick() {
+      wake?.();
     },
     /** Resolves when the queue has nothing ready and no swarm is running (tests, scripts). */
     idle() {

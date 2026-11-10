@@ -1,0 +1,73 @@
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+    inputs:
+      proof:
+        description: "Also re-run the Verus proof pipeline (slow)"
+        type: boolean
+        default: false
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm typecheck
+      # Unit + integration, including the differential test against proof/build/elevate_policy.wasm.
+      - run: pnpm test
+      # Gate quality on the eval set (reference reviews; `--live` needs model credentials).
+      - run: pnpm eval:gates
+      - run: pnpm build
+      - run: pnpm --filter @elevate/web exec playwright install --with-deps chromium
+      - run: pnpm test:e2e
+      - if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright
+          path: apps/web/test-results
+          retention-days: 7
+
+  # Manual: the Linux Verus toolchain setup below has not been exercised yet.
+  proof:
+    if: github.event_name == 'workflow_dispatch' && inputs.proof
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: Install Verus (same release as proof/RECEIPT.md)
+        run: |
+          curl -sSL -o verus.zip https://github.com/verus-lang/verus/releases/download/release%2F0.2026.11.02.8bf68ee/verus-0.2026.11.02.8bf68ee-x86-linux.zip
+          unzip -q verus.zip -d "$RUNNER_TEMP/verus"
+          VERUS_BIN=$(find "$RUNNER_TEMP/verus" -name verus -type f | head -1)
+          echo "VERUS=$VERUS_BIN" >> "$GITHUB_ENV"
+          TOOLCHAIN=$(grep -oP '(?<=channel = ")[^"]+' "$(dirname "$VERUS_BIN")/rust-toolchain.toml" || echo stable)
+          rustup toolchain install "$TOOLCHAIN" --profile minimal --target wasm32-unknown-unknown
+          echo "RUSTUP_TOOLCHAIN=$TOOLCHAIN-x86_64-unknown-linux-gnu" >> "$GITHUB_ENV"
+      - run: pnpm proof
+      - uses: actions/upload-artifact@v4
+        with:
+          name: proof-receipt
+          path: |
+            proof/RECEIPT.md
+            proof/results

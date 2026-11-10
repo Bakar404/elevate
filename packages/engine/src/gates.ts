@@ -10,12 +10,34 @@ import {
   type Thresholds,
 } from "@elevate/policy";
 import { hackerNewsSignal } from "@elevate/sources";
+import type { JsonRequest, LLM } from "@elevate/agent";
 import type { Ctx } from "./context";
 import { applyEvent } from "./lifecycle";
 import { LEGITIMACY_SYSTEM, LegitimacySchema, SOUNDNESS_SYSTEM, SoundnessSchema } from "./prompts";
 
 export async function thresholds(ctx: Ctx): Promise<Thresholds> {
   return { ...DEFAULT_THRESHOLDS, ...(await getSetting<Partial<Thresholds>>(ctx.db, "gates.thresholds", {})) };
+}
+
+/** A verdict and a 0-100 score that disagree (e.g. legit=true, score=0) is a model slip, not a judgment. */
+export function contradicts(verdict: boolean, score: number): boolean {
+  return verdict ? score < 50 : score >= 50;
+}
+
+/**
+ * Ask for a gate review; if the answer contradicts itself, ask once more. A second contradiction caps the
+ * score below 50 (under every gate threshold), so a glitch can only hide a recommendation, never let one through.
+ */
+export async function consistentReview<T extends { score: number }>(
+  llm: LLM,
+  req: JsonRequest<T>,
+  verdict: (r: T) => boolean,
+): Promise<T & { retried: boolean }> {
+  const first = await llm.json(req);
+  if (!contradicts(verdict(first), first.score)) return { ...first, retried: false };
+  const second = await llm.json(req);
+  if (!contradicts(verdict(second), second.score)) return { ...second, retried: true };
+  return { ...second, score: Math.min(first.score, second.score, 49), retried: true };
 }
 
 export type EvidenceSignals = {
@@ -91,7 +113,7 @@ export async function legitimacyGate(ctx: Ctx, techniqueId: string): Promise<Gat
     ...tech.claims.evidenceLinks.slice(0, 5).map((u) => ({ label: "Cited evidence", detail: u, url: u })),
   ];
 
-  const review = await ctx.llm.json({
+  const review = await consistentReview(ctx.llm, {
     task: "legitimacy",
     system: LEGITIMACY_SYSTEM,
     schema: LegitimacySchema,
@@ -103,7 +125,7 @@ export async function legitimacyGate(ctx: Ctx, techniqueId: string): Promise<Gat
       ...evidence.map((e) => `- ${e.label}: ${e.detail}${e.url ? ` <${e.url}>` : ""}`),
       `Independent evidence prior: ${prior.score}/100 (${JSON.stringify(prior.parts)})`,
     ].join("\n"),
-  });
+  }, (r) => r.legit);
 
   const t = await thresholds(ctx);
   const d = legitimacyDecision({ prior: prior.score, review: review.score, legit: review.legit }, t);
@@ -153,7 +175,7 @@ export async function soundnessGate(ctx: Ctx, recommendationId: string): Promise
     await Promise.all(rec.hypothesis.touchpoints.slice(0, 4).map(async (p) => ({ path: p, content: await readRepoFileSafe(ctx, repo.fullName, p) })))
   ).filter((f): f is { path: string; content: string } => !!f.content);
 
-  const review = await ctx.llm.json({
+  const review = await consistentReview(ctx.llm, {
     task: "soundness",
     system: SOUNDNESS_SYSTEM,
     schema: SoundnessSchema,
@@ -168,7 +190,7 @@ export async function soundnessGate(ctx: Ctx, recommendationId: string): Promise
       `Effort/risk (matcher's guess): ${rec.hypothesis.effort}/${rec.hypothesis.risk}`,
       ...files.map((f) => `--- ${f.path} ---\n${f.content.slice(0, 6000)}`),
     ].join("\n\n"),
-  });
+  }, (r) => r.sound);
 
   const t = await thresholds(ctx);
   const risk = higherRisk(rec.hypothesis.risk, review.risk);

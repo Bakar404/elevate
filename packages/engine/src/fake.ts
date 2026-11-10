@@ -41,7 +41,7 @@ export function demoLLM(): FakeLLM {
               ? {
                   name,
                   summary: (body ?? "").trim().slice(0, 240) || t,
-                  category: /verif|proof|test|fuzz|formal|spec/i.test(t) ? "testing-verification" : /infer|decod|quantiz/i.test(t) ? "llm-inference" : "developer-tooling",
+                  category: /verif|proof|test|fuzz|formal|\bspec\b/i.test(t) ? "testing-verification" : /infer|decod|quantiz/i.test(t) ? "llm-inference" : "developer-tooling",
                   claimedBenefits: ["Fewer defects", "Faster iteration"],
                   appliesTo: [...words(t)].slice(0, 5),
                   prerequisites: [],
@@ -87,13 +87,17 @@ export function demoLLM(): FakeLLM {
     })
     .on("soundness", (req) => {
       const legit = num(req.prompt, /Technique legitimacy: (\d+)/);
+      const tech = words(req.prompt.match(/Technique: (.+)/)?.[1] ?? "");
+      const surfaces = words([req.prompt.match(/Domains: (.+)/)?.[1], req.prompt.match(/Improvement surfaces: (.+)/)?.[1]].join(" "));
+      const shared = [...tech].filter((w) => surfaces.has(w));
+      const sound = shared.length > 0;
       return {
-        sound: true,
-        score: Math.min(90, 40 + Math.round(legit / 2)),
-        verdict: "Fits the repo's stack; small, verifiable change.",
-        reasons: ["Matches an improvement surface in the profile"],
+        sound,
+        score: sound ? Math.min(90, 40 + Math.round(legit / 2)) : 30,
+        verdict: sound ? "Fits the repo's stack; small, verifiable change." : "The technique doesn't touch anything this repo cares about.",
+        reasons: sound ? [`Addresses the repo's ${shared.slice(0, 3).join(", ")}`] : ["No overlap with the repo's domains or improvement surfaces"],
         risks: ["Adds a dev dependency"],
-        expectedImpact: "Catches a class of bugs the current tests miss.",
+        expectedImpact: sound ? "Catches a class of bugs the current tests miss." : "None expected for this codebase.",
         measurement: "Run the test suite before and after; count newly caught failures.",
         measurable: true,
         risk: "low",

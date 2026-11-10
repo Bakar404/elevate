@@ -1,0 +1,118 @@
+@import "tailwindcss";
+
+@custom-variant dark (&:where(.dark, .dark *));
+
+@theme {
+  --font-sans: "Inter Variable", "Inter", ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+  --font-mono: "JetBrains Mono", ui-monospace, "Cascadia Code", "SFMono-Regular", Menlo, monospace;
+
+  --color-bg: oklch(0.145 0.006 250);
+  --color-panel: oklch(0.185 0.007 250);
+  --color-raised: oklch(0.225 0.008 250);
+  --color-line: oklch(1 0 0 / 0.08);
+  --color-line-strong: oklch(1 0 0 / 0.14);
+  --color-fg: oklch(0.96 0.004 250);
+  --color-muted: oklch(0.72 0.012 250);
+  --color-faint: oklch(0.56 0.012 250);
+
+  /* Palette borrowed from the dither landscape: sky, cloud, olive, sand. */
+  --color-sky: oklch(0.66 0.13 250);
+  --color-cloud: oklch(0.83 0.04 240);
+  --color-olive: oklch(0.67 0.11 125);
+  --color-sand: oklch(0.83 0.1 85);
+  --color-danger: oklch(0.66 0.19 25);
+
+  --radius-card: 14px;
+
+  --ease-out: cubic-bezier(0.23, 1, 0.32, 1);
+  --ease-in-out: cubic-bezier(0.77, 0, 0.175, 1);
+  --ease-drawer: cubic-bezier(0.32, 0.72, 0, 1);
+
+  --animate-shimmer: shimmer 2.4s linear infinite;
+  --animate-fade-up: fade-up 400ms var(--ease-out) both;
+
+  @keyframes shimmer {
+    from { background-position: 200% 0; }
+    to { background-position: -200% 0; }
+  }
+  @keyframes fade-up {
+    from { opacity: 0; transform: translateY(6px); }
+    to { opacity: 1; transform: translateY(0); }
+  }
+}
+
+:root {
+  color-scheme: dark;
+}
+
+html,
+body {
+  background: var(--color-bg);
+  color: var(--color-fg);
+  font-family: var(--font-sans);
+  font-feature-settings: "cv11", "ss01";
+  -webkit-font-smoothing: antialiased;
+}
+
+::selection {
+  background: color-mix(in oklch, var(--color-sky) 40%, transparent);
+}
+
+* {
+  scrollbar-width: thin;
+  scrollbar-color: var(--color-line-strong) transparent;
+}
+
+:focus-visible {
+  outline: 2px solid color-mix(in oklch, var(--color-sky) 70%, transparent);
+  outline-offset: 2px;
+}
+
+/* Base UI popups grow from their trigger. */
+.popup {
+  transform-origin: var(--transform-origin);
+  transition: opacity 150ms var(--ease-out), transform 150ms var(--ease-out);
+}
+.popup[data-starting-style],
+.popup[data-ending-style] {
+  opacity: 0;
+  transform: scale(0.96);
+}
+.popup[data-instant] {
+  transition: none;
+}
+
+.dialog-backdrop {
+  transition: opacity 200ms var(--ease-out);
+}
+.dialog-backdrop[data-starting-style],
+.dialog-backdrop[data-ending-style] {
+  opacity: 0;
+}
+.dialog-popup {
+  transition: opacity 200ms var(--ease-out), transform 200ms var(--ease-out);
+}
+.dialog-popup[data-starting-style],
+.dialog-popup[data-ending-style] {
+  opacity: 0;
+  transform: translate(-50%, -50%) scale(0.96);
+}
+
+.prose-chat p { margin: 0.5em 0; }
+.prose-chat ul { list-style: disc; padding-left: 1.25em; margin: 0.5em 0; }
+.prose-chat ol { list-style: decimal; padding-left: 1.25em; margin: 0.5em 0; }
+.prose-chat code { font-family: var(--font-mono); font-size: 0.85em; background: var(--color-raised); padding: 0.1em 0.35em; border-radius: 5px; }
+.prose-chat pre { background: var(--color-raised); padding: 0.75em 1em; border-radius: 10px; overflow-x: auto; }
+.prose-chat pre code { background: none; padding: 0; }
+.prose-chat a { color: var(--color-sky); text-decoration: underline; text-underline-offset: 3px; }
+.prose-chat strong { color: var(--color-fg); font-weight: 600; }
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}

@@ -1,5 +1,6 @@
 import { CopilotClient, ToolSet, approveAll, defineTool, type CopilotSession } from "@github/copilot-sdk";
 import type { z } from "zod";
+import { responseSchema } from "./schema";
 
 export type ProviderKind = "copilot" | "anthropic" | "openai" | "azure";
 
@@ -82,19 +83,20 @@ export async function createSession(opts: SessionOptions): Promise<CopilotSessio
       ? { type: config.provider, baseUrl: config.baseUrl, apiKey: config.apiKey }
       : undefined;
 
-  const tools = (opts.tools ?? []).map((t) =>
-    defineTool(t.name, {
+  const tools = (opts.tools ?? []).map((t) => {
+    const params = responseSchema(t.parameters);
+    return defineTool(t.name, {
       description: t.description,
-      parameters: t.parameters,
+      parameters: params.toJSONSchema(),
       handler: async (args: unknown) => {
         try {
-          return await t.handler(args as never);
+          return await t.handler(params.parse(args ?? {}) as never);
         } catch (err) {
           return `Tool ${t.name} failed: ${err instanceof Error ? err.message : String(err)}`;
         }
       },
-    } as never),
-  );
+    } as never);
+  });
 
   let availableTools: ToolSet | undefined;
   if (!opts.fullAgent) {

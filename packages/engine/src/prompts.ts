@@ -77,7 +77,7 @@ with a clear benefit for that repo's stack and domain. Generic advice ("add test
 
 export const LegitimacySchema = z.object({
   legit: z.boolean().describe("Is this a real, substantiated technique (not hype, vaporware, or a misread claim)?"),
-  score: z.number().min(0).max(100),
+  score: z.number().min(0).max(100).describe("Confidence that the technique is legitimate, 0-100 (consistent with `legit`)"),
   verdict: z.string().describe("One sentence"),
   reasons: z.array(z.string()),
   redFlags: z.array(z.string()).describe("Hype signals, missing evidence, unreplicated claims, conflicts of interest"),
@@ -91,7 +91,7 @@ Use only the evidence provided; do not assume facts not in evidence.`;
 
 export const SoundnessSchema = z.object({
   sound: z.boolean().describe("Will this change make a real, positive difference in THIS repo, worth its cost?"),
-  score: z.number().min(0).max(100),
+  score: z.number().min(0).max(100).describe("Confidence the change is sound and worth it for THIS repo, 0-100 (consistent with `sound`)"),
   verdict: z.string(),
   reasons: z.array(z.string()),
   risks: z.array(z.string()),

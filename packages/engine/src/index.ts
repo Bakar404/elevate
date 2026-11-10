@@ -8,5 +8,7 @@ export * from "./matcher";
 export * from "./swarm";
 export * from "./pipeline";
 export * from "./tools";
+export * from "./chat";
+export * from "./views";
 export * from "./demo";
 export { demoLLM } from "./fake";

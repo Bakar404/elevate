@@ -13,6 +13,12 @@ import {
   regateRecommendation,
   rejectRecommendation,
   seedDemo,
+  stats,
+  chat,
+  createThread,
+  listRecommendations,
+  radar,
+  threadMessages,
   type Ctx,
 } from "../src";
 
@@ -67,6 +73,8 @@ describe("pipeline on the demo workspace", () => {
       if (rec.status === "open") expect(rec.gate1?.passed && rec.gate2?.passed).toBe(true);
     }
     expect(open.some((r) => /proof-driven/i.test(r.tech) && r.repo === "demo/ledger-api")).toBe(true);
+    const offDomain = all.find((r) => /speculative/i.test(r.tech) && r.repo === "demo/ledger-api");
+    if (offDomain) expect(offDomain.rec.status).toBe("gated_out");
   });
 });
 
@@ -113,6 +121,31 @@ describe("approval and swarm", () => {
     const after = await recById(r.rec.id);
     expect(after.history.slice(-3)).toEqual(["reject", "reopen", "gate_pass"]);
     expect(replay(after.history)).toBe(after.status);
+  });
+});
+
+describe("read models and chat", () => {
+  it("stats agree with the rows", async () => {
+    const s = await stats(ctx);
+    const all = await recs();
+    expect(s.repos).toBe(3);
+    expect(s.open).toBe(all.filter((r) => r.rec.status === "open").length);
+    expect(s.prs).toBe(1);
+    expect(s.hype).toBeGreaterThanOrEqual(1);
+    expect((await listRecommendations(ctx, "open")).every((r) => r.status === "open")).toBe(true);
+    const hype = (await radar(ctx)).find((t) => /weight-space/i.test(t.name));
+    expect(hype?.items[0]?.source).toBe("Growth Hacks Weekly");
+  });
+
+  it("demo chat answers from the real tools and saves both messages", async () => {
+    const thread = await createThread(ctx);
+    const seen: string[] = [];
+    const text = await chat(ctx, thread.id, "what should I upgrade?", (e) => seen.push(e.type));
+    expect(seen).toEqual(expect.arrayContaining(["tool_start", "tool_end", "delta", "done"]));
+    expect(text).toMatch(/ledger-api|llm-router/);
+    const msgs = await threadMessages(ctx, thread.id);
+    expect(msgs.map((m) => m.role)).toEqual(["user", "assistant"]);
+    expect(msgs[1]?.toolCalls[0]?.name).toBe("list_recommendations");
   });
 });
 

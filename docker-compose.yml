@@ -1,0 +1,40 @@
+# Postgres + pgvector, the web app, and a separate worker.
+#   docker compose up --build
+# Credentials come from .env: GITHUB_TOKEN (repo access and the Copilot runtime), and optionally
+# ELEVATE_PROVIDER plus a BYOK key. For the database alone: docker compose up db
+services:
+  db:
+    image: pgvector/pgvector:pg17
+    environment:
+      POSTGRES_USER: elevate
+      POSTGRES_PASSWORD: elevate
+      POSTGRES_DB: elevate
+    ports: ["5432:5432"]
+    volumes: [pgdata:/var/lib/postgresql/data]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U elevate"]
+      interval: 3s
+      retries: 20
+
+  web:
+    build: .
+    env_file: [{ path: .env, required: false }]
+    environment:
+      DATABASE_URL: postgres://elevate:elevate@db:5432/elevate
+      ELEVATE_EMBEDDED_WORKER: "0"
+    ports: ["3100:3100"]
+    volumes: [data:/data]
+    depends_on: { db: { condition: service_healthy } }
+
+  worker:
+    build: .
+    command: ["pnpm", "worker"]
+    env_file: [{ path: .env, required: false }]
+    environment:
+      DATABASE_URL: postgres://elevate:elevate@db:5432/elevate
+    volumes: [data:/data]
+    depends_on: { db: { condition: service_healthy } }
+
+volumes:
+  pgdata:
+  data:

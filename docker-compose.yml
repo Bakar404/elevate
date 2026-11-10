@@ -17,7 +17,10 @@ services:
       retries: 20
 
   web:
-    build: .
+    build: &build
+      context: .
+      args:
+        NPM_REGISTRY: ${NPM_REGISTRY:-https://registry.npmjs.org/}
     env_file: [{ path: .env, required: false }]
     environment:
       DATABASE_URL: postgres://elevate:elevate@db:5432/elevate
@@ -27,7 +30,7 @@ services:
     depends_on: { db: { condition: service_healthy } }
 
   worker:
-    build: .
+    build: *build
     command: ["pnpm", "worker"]
     env_file: [{ path: .env, required: false }]
     environment:

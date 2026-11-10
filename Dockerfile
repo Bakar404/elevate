@@ -1,8 +1,13 @@
 # One image for both processes: `web` (default) and `worker` (override the command).
 FROM node:24-bookworm-slim AS base
-ENV PNPM_HOME=/pnpm PATH=/pnpm:$PATH NEXT_TELEMETRY_DISABLED=1
-RUN corepack enable && apt-get update && apt-get install -y --no-install-recommends git ca-certificates && rm -rf /var/lib/apt/lists/*
+# Override when npmjs is unreachable (e.g. behind a corporate proxy): --build-arg NPM_REGISTRY=...
+ARG NPM_REGISTRY=https://registry.npmjs.org/
+ENV npm_config_registry=$NPM_REGISTRY pnpm_config_registry=$NPM_REGISTRY NEXT_TELEMETRY_DISABLED=1
+RUN echo "registry=$NPM_REGISTRY" > /root/.npmrc
+RUN apt-get update && apt-get install -y --no-install-recommends git ca-certificates && rm -rf /var/lib/apt/lists/*
 WORKDIR /app
+COPY package.json ./
+RUN npm install -g "pnpm@$(node -p "require('./package.json').packageManager.split('@')[1]")"
 
 FROM base AS build
 COPY . .

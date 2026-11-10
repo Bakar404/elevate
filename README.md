@@ -82,7 +82,7 @@ Last live run (Copilot default model):
 
 Local mode uses embedded PGlite (Postgres in WASM) with pgvector, stored in `.data/`. Set `DATABASE_URL` to use a real Postgres instead; `docker compose up db` starts one. Every table has a `tenant_id`, so the move to multi-tenant SaaS is planned for. Tokens and API keys are encrypted at rest (AES-GCM, key in `ELEVATE_SECRET` or `.data/secret.key`).
 
-`docker compose up --build` runs Postgres, the web app and a separate worker from one image. Put `GITHUB_TOKEN` (and any BYOK key) in `.env`; inside a container there is no `gh` login to fall back on.
+`docker compose up --build` runs Postgres, the web app and a separate worker from one image. Put `GITHUB_TOKEN` (and any BYOK key) in `.env`; inside a container there is no `gh` login to fall back on. If registry.npmjs.org is blocked on your network, point the image build at a mirror: `NPM_REGISTRY=https://your-mirror/npm/ docker compose build`.
 
 ## Safety rails
 

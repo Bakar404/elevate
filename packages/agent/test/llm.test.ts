@@ -69,6 +69,21 @@ describe("CopilotLLM model and usage selection", () => {
     expect(createSession).toHaveBeenLastCalledWith({ config: { provider: "copilot", model: undefined }, system: request.system });
   });
 
+  it("omits whitespace-only fallback models for roles without changing no-role callers", async () => {
+    vi.stubEnv("ELEVATE_MODEL", " \t ");
+    const llm = new CopilotLLM();
+    await llm.json({ ...request, role: "gate1" });
+    expect(createSession).toHaveBeenLastCalledWith({
+      config: { provider: "copilot", model: undefined },
+      system: request.system,
+    });
+    await llm.json(request);
+    expect(createSession).toHaveBeenLastCalledWith({
+      config: { provider: "copilot", model: " \t " },
+      system: request.system,
+    });
+  });
+
   it("records actual SDK usage events under the reported model and unsubscribes", async () => {
     const recorder = new UsageRecorder();
     sendAndWait.mockImplementation(async () => {

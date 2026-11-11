@@ -28,7 +28,7 @@ export class CopilotLLM implements LLM {
   ) {}
 
   async json<T>(req: JsonRequest<T>): Promise<T> {
-    const model = req.model?.trim() || (req.role ? resolveModel(req.role) : undefined) || this.config.model;
+    const model = req.model?.trim() || (req.role ? resolveModel(req.role) || this.config.model?.trim() || undefined : this.config.model);
     const session = await createSession({ config: { ...this.config, model }, system: req.system });
     let sawUsage = false;
     let unsubscribe: (() => void) | undefined;

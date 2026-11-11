@@ -1,5 +1,22 @@
 import type { ExecutorKind, TaskRole, TaskStatus } from "@elevate/db";
+import type { UsageRecorder } from "@elevate/agent";
 import type { GuardedGitHub } from "./guard";
+
+export type ExecutorOptions = {
+  /** Explicit local-agent model override; otherwise the swarm role's model is used. */
+  model?: string;
+  /** Fixture-only local execution; requires createLocalBenchmarkGitHub, never a live writer. */
+  benchmark?: {
+    fixtureDirectory: string;
+    /** Trusted assertions with a completion marker or TAP counts; receives ELEVATE_BENCHMARK_WORKSPACE. */
+    verify: { command: string; args: string[]; minimumTests?: number; successMarker?: string };
+    onStage?: (stage: "implementer" | "tester" | "reviewer") => void | Promise<void>;
+    beforePublish?: (
+      cwd: string,
+      result: { diff: string; verification: NonNullable<SwarmOutcome["verification"]> },
+    ) => Promise<void>;
+  };
+};
 
 export type PlannedTask = {
   key: string;
@@ -40,6 +57,14 @@ export type SwarmOutcome = {
   prUrl?: string;
   issueUrl?: string;
   summary: string;
+  /** Requested model, when the executor can select one. Absent for runtime defaults. */
+  model?: string;
+  /** This run only. Null when a delegated agent or CLI does not expose token usage. */
+  usage?: ReturnType<UsageRecorder["snapshot"]> | null;
+  /** Independently executed fixture verification, not the agent's claim of success. */
+  verification?: { command: string; args: string[]; output: string };
+  /** Fixture-only staged diff for independent model review after workspace cleanup. */
+  diff?: string;
 };
 
 export interface Executor {

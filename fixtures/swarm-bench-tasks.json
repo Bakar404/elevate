@@ -1,0 +1,114 @@
+{
+  "source": "packages/engine/src/demo.ts",
+  "description": "Small reproducible runnable fixture seeds derived from demo profiles, not clones of published repositories. Each seed has an intentional defect and an independent acceptance script. Fake execution remains simulated.",
+  "tasks": [
+    {
+      "id": "ledger-parser-roundtrip",
+      "repo": "demo/ledger-api",
+      "surface": "parser testing",
+      "title": "Check query-parser round trips",
+      "touchpoints": ["src/parser/query.ts"],
+      "instructions": "Add generated query cases covering quoting, escaped delimiters and empty filters. Assert parse/serialize/parse preserves the query AST without changing accepted syntax.",
+      "acceptanceCriteria": ["Quoted delimiters and escaping round trip", "Malformed input is rejected without throwing outside the parser error contract"],
+      "verification": "Run the harness's independent Node acceptance tests for the percent-encoded key/value query grammar. Preserve the parseQuery and serializeQuery exports.",
+      "fixture": {
+        "runtime": "node",
+        "expectedTests": 2,
+        "files": {
+          "src/parser/query.ts": "export function parseQuery(text: string): [string, string][] {\n  if (!text) return [];\n  return text.split('&').map((part) => {\n    const [key, value] = part.split('=');\n    if (!key || value === undefined) throw new Error('Invalid query');\n    return [key, value];\n  });\n}\nexport function serializeQuery(ast: [string, string][]): string {\n  return ast.map(([key, value]) => `${key}=${value}`).join('&');\n}\n"
+        },
+        "acceptanceScript": "import { test } from 'node:test';\nimport assert from 'node:assert/strict';\nimport { parseQuery, serializeQuery } from '../src/parser/query.ts';\ntest('escaped filters round trip', () => {\n  const values = ['', 'plain', 'a&b=c', '\"quoted\"', 'snowman ☃', '%20', 'back\\\\slash'];\n  for (const value of values) {\n    const ast = [['name', value], ['other', 'x=y&z']];\n    assert.deepEqual(parseQuery(serializeQuery(ast)), ast);\n  }\n  assert.deepEqual(parseQuery('name=a%26b%3Dc'), [['name', 'a&b=c']]);\n  assert.deepEqual(parseQuery(''), []);\n});\ntest('malformed filters reject', () => {\n  for (const input of ['missing', '=empty-key', 'name=%ZZ']) assert.throws(() => parseQuery(input));\n});\n"
+      }
+    },
+    {
+      "id": "ledger-posting-invariants",
+      "repo": "demo/ledger-api",
+      "surface": "verification of posting invariants",
+      "title": "Verify balanced ledger postings",
+      "touchpoints": ["src/ledger/post.ts"],
+      "instructions": "Add tests that balanced entries preserve debit/credit equality and unbalanced entries leave the ledger unchanged. Cover zero values, multiple lines and integer minor-unit boundaries.",
+      "acceptanceCriteria": ["Valid postings reconcile exactly", "Rejected postings have no partial side effects"],
+      "verification": "Run the harness's independent Node posting acceptance tests. Keep post(ledger, entries), using integer minor units and debit/credit line objects.",
+      "fixture": {
+        "runtime": "node",
+        "expectedTests": 2,
+        "files": {
+          "src/ledger/post.ts": "export function post(ledger: number[], entries: { debit: number; credit: number }[]): number[] {\n  for (const entry of entries) ledger.push(entry.debit - entry.credit);\n  if (entries.reduce((sum, entry) => sum + entry.debit - entry.credit, 0) !== 0) throw new Error('Unbalanced');\n  return ledger;\n}\n"
+        },
+        "acceptanceScript": "import { test } from 'node:test';\nimport assert from 'node:assert/strict';\nimport { post } from '../src/ledger/post.ts';\ntest('balanced integer entries reconcile', () => {\n  for (const amount of [0, 1, 137, Number.MAX_SAFE_INTEGER]) {\n    const ledger = [];\n    post(ledger, [{debit:amount, credit:0}, {debit:0, credit:amount}]);\n    assert.equal(ledger.reduce((a,b) => a+b, 0), 0);\n  }\n});\ntest('invalid postings are atomic', () => {\n  for (const entries of [[{debit:2,credit:1}], [{debit:0.5,credit:0.5}], [{debit:NaN,credit:NaN}], [{debit:-1,credit:-1}]]) {\n    const ledger = [5, -5];\n    assert.throws(() => post(ledger, entries));\n    assert.deepEqual(ledger, [5, -5]);\n  }\n});\n"
+      }
+    },
+    {
+      "id": "router-decode-equivalence",
+      "repo": "demo/llm-router",
+      "surface": "decoding latency",
+      "title": "Verify speculative decoding equivalence",
+      "touchpoints": ["router/decode.py"],
+      "instructions": "Use deterministic stub draft and target models to test accepted and rejected speculative tokens, end-of-sequence handling and target fallback. Do not fetch model weights or contact inference services.",
+      "acceptanceCriteria": ["Outputs match the target-only deterministic decoder", "Rejection and end-of-sequence cases terminate correctly"],
+      "verification": "Run the harness's independent Python unittest decoding checks with fixed token sequences; preserve decode(draft_tokens, target_tokens, eos=0). Do not infer production speedup from stubs.",
+      "fixture": {
+        "runtime": "python",
+        "expectedTests": 2,
+        "files": {
+          "router/decode.py": "def decode(draft_tokens, target_tokens, eos=0):\n    \"\"\"Return verified tokens, excluding the end-of-sequence token.\"\"\"\n    return list(draft_tokens)\n"
+        },
+        "acceptanceScript": "import unittest\nfrom router.decode import decode\nclass DecodeTests(unittest.TestCase):\n    def test_target_equivalence(self):\n        for draft, target in [([1,2], [1,2]), ([9,9], [1,2,3]), ([], [4,5]), ([1,2,3], [1,0,9]), ([9], []), ([0], [0,1])]:\n            expected = target[:target.index(0)] if 0 in target else target\n            self.assertEqual(decode(draft, target), expected)\n    def test_inputs_unchanged(self):\n        draft, target = [9,8], [1,2]\n        decode(draft, target)\n        self.assertEqual(draft, [9,8])\n        self.assertEqual(target, [1,2])\nunittest.main()\n"
+      }
+    },
+    {
+      "id": "router-batch-fairness",
+      "repo": "demo/llm-router",
+      "surface": "inference throughput",
+      "title": "Bound dynamic batching waits",
+      "touchpoints": ["router/batch.py"],
+      "instructions": "Add fake-clock tests for batch size limits, timeout flush and request cancellation. Preserve request ordering and prevent small requests from waiting forever.",
+      "acceptanceCriteria": ["Batches respect size and wait limits", "Cancelled requests are omitted without dropping live requests"],
+      "verification": "Run independent Python unittest checks for flush(requests, now, max_size, max_wait), returning (selected IDs, remaining request dictionaries). Requests have id, enqueued and optional cancelled fields.",
+      "fixture": {
+        "runtime": "python",
+        "expectedTests": 3,
+        "files": {
+          "router/batch.py": "def flush(requests, now, max_size, max_wait):\n    selected = requests[:max_size]\n    return [request['id'] for request in selected], requests[max_size:]\n"
+        },
+        "acceptanceScript": "import unittest\nfrom router.batch import flush\nclass BatchTests(unittest.TestCase):\n    def test_wait_and_timeout(self):\n        requests = [{'id':'a','enqueued':0}]\n        self.assertEqual(flush(requests, 2, 4, 5), ([], requests))\n        self.assertEqual(flush(requests, 5, 4, 5), (['a'], []))\n    def test_limit_order_and_cancellation(self):\n        requests = [{'id':'cancel','enqueued':0,'cancelled':True}] + [{'id':str(i),'enqueued':0} for i in range(5)]\n        chosen, remaining = flush(requests, 10, 2, 5)\n        self.assertEqual(chosen, ['0','1'])\n        self.assertEqual([r['id'] for r in remaining], ['2','3','4'])\n        self.assertEqual(len(requests), 6)\n    def test_empty(self):\n        self.assertEqual(flush([], 100, 2, 5), ([], []))\nunittest.main()\n"
+      }
+    },
+    {
+      "id": "firmware-frame-roundtrip",
+      "repo": "demo/edge-firmware",
+      "surface": "wire format verification",
+      "title": "Verify sensor wire-format boundaries",
+      "touchpoints": ["src/frame.rs"],
+      "instructions": "Add host-side frame encoding tests for byte order, maximum payloads and truncated buffers. Preserve the existing wire format and reject overflow before writing.",
+      "acceptanceCriteria": ["Boundary values encode to expected bytes", "Short buffers fail without partial out-of-bounds writes"],
+      "verification": "Run the harness's host rustc --test acceptance checks without external crates, hardware or network. Preserve encode(seq: u16, payload: &[u8], out: &mut [u8]) -> Result<usize, &'static str>; frame is little-endian seq, u8 payload length, payload.",
+      "fixture": {
+        "runtime": "rust",
+        "expectedTests": 2,
+        "files": {
+          "src/frame.rs": "pub fn encode(seq: u16, payload: &[u8], out: &mut [u8]) -> Result<usize, &'static str> {\n    out[0] = (seq >> 8) as u8;\n    out[1] = seq as u8;\n    out[2] = payload.len() as u8;\n    out[3..3 + payload.len()].copy_from_slice(payload);\n    Ok(3 + payload.len())\n}\n"
+        },
+        "acceptanceScript": "include!(\"../src/frame.rs\");\n#[test]\nfn frame_bytes() {\n    let mut out = [0u8; 8];\n    assert_eq!(encode(0x1234, &[7,8], &mut out), Ok(5));\n    assert_eq!(&out[..5], &[0x34,0x12,2,7,8]);\n    let mut large = [0u8; 258];\n    assert_eq!(encode(u16::MAX, &[9;255], &mut large), Ok(258));\n}\n#[test]\nfn rejects_without_writes() {\n    let mut out = [42u8; 4];\n    assert!(encode(1, &[1,2], &mut out).is_err());\n    assert_eq!(out, [42u8;4]);\n    let mut large = [42u8; 300];\n    assert!(encode(1, &[0;256], &mut large).is_err());\n    assert_eq!(large, [42u8;300]);\n}\n"
+      }
+    },
+    {
+      "id": "firmware-idle-sampling",
+      "repo": "demo/edge-firmware",
+      "surface": "power usage",
+      "title": "Check idle sampling scheduling",
+      "touchpoints": ["src/frame.rs"],
+      "instructions": "Test the sensor-frame scheduling boundary with a fake clock: idle intervals should not emit duplicate UDP frames, and active sampling should resume without losing the next frame. Avoid new hardware dependencies.",
+      "acceptanceCriteria": ["Idle intervals do not emit duplicate frames", "Resuming samples preserves sequence order"],
+      "verification": "Run the harness's host rustc --test checks for should_emit(last_ms: Option<u64>, now_ms: u64, interval_ms: u64, active: bool) -> bool. No power-savings claim without hardware measurements.",
+      "fixture": {
+        "runtime": "rust",
+        "expectedTests": 2,
+        "files": {
+          "src/frame.rs": "pub fn should_emit(_last_ms: Option<u64>, _now_ms: u64, _interval_ms: u64, active: bool) -> bool {\n    active\n}\n"
+        },
+        "acceptanceScript": "include!(\"../src/frame.rs\");\n#[test]\nfn idle_and_resume() {\n    assert!(!should_emit(Some(10), 100, 5, false));\n    assert!(should_emit(Some(10), 100, 5, true));\n    assert!(should_emit(None, 0, 5, true));\n}\n#[test]\nfn no_duplicates_or_clock_underflow() {\n    assert!(!should_emit(Some(10), 10, 5, true));\n    assert!(!should_emit(Some(10), 14, 5, true));\n    assert!(should_emit(Some(10), 15, 5, true));\n    assert!(!should_emit(Some(10), 9, 5, true));\n}\n"
+      }
+    }
+  ]
+}

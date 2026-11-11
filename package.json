@@ -17,6 +17,7 @@
     "test": "vitest run",
     "test:e2e": "pnpm --filter @elevate/web test:e2e",
     "eval:gates": "tsx scripts/eval-gates.ts",
+    "bench:swarm": "tsx scripts/bench-swarm.ts",
     "smoke:copilot": "tsx scripts/smoke-copilot.ts",
     "proof": "node proof/run.mjs"
   },

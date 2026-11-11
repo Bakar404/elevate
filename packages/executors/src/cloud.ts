@@ -45,7 +45,7 @@ export class CopilotCloudExecutor implements Executor {
     const prUrl = await waitForPr(run, issue.number, "Copilot");
     for (const t of run.plan.tasks) await run.setTask(t.key, prUrl ? "done" : "failed");
     if (!prUrl) throw new Error(`No pull request linked to ${issue.url} within the time budget`);
-    return { prUrl, issueUrl: issue.url, summary: "Copilot coding agent opened a pull request" };
+    return { prUrl, issueUrl: issue.url, summary: "Copilot coding agent opened a pull request", usage: null };
   }
 }
 
@@ -76,6 +76,6 @@ export class MentionExecutor implements Executor {
     const prUrl = await waitForPr(run, issue.number, this.mention);
     for (const t of run.plan.tasks) await run.setTask(t.key, prUrl ? "done" : "failed");
     if (!prUrl) throw new Error(`No pull request linked to ${issue.url} within the time budget`);
-    return { prUrl, issueUrl: issue.url, summary: `${this.label} opened a pull request` };
+    return { prUrl, issueUrl: issue.url, summary: `${this.label} opened a pull request`, usage: null };
   }
 }

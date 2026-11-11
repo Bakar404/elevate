@@ -60,6 +60,6 @@ export class FakeExecutor implements Executor {
       body: `${run.plan.summary}\n\nCloses #${issue.number}`,
     });
     await run.log(`Opened draft PR ${pr.url}`, "success");
-    return { prUrl: pr.url, issueUrl: issue.url, summary: "Simulated swarm finished" };
+    return { prUrl: pr.url, issueUrl: issue.url, summary: "Simulated swarm finished", usage: [] };
   }
 }

@@ -2,7 +2,7 @@ import type { ExecutorKind } from "@elevate/db";
 import { CopilotCloudExecutor, MentionExecutor } from "./cloud";
 import { FakeExecutor } from "./fake";
 import { LocalExecutor } from "./local";
-import type { Executor } from "./types";
+import type { Executor, ExecutorOptions } from "./types";
 
 export * from "./types";
 export * from "./guard";
@@ -18,7 +18,7 @@ export const EXECUTORS: { kind: ExecutorKind; label: string; description: string
   { kind: "fake", label: "Simulation", description: "Walks the plan without agents. For demos and tests." },
 ];
 
-export function getExecutor(kind: ExecutorKind): Executor {
+export function getExecutor(kind: ExecutorKind, options: ExecutorOptions = {}): Executor {
   switch (kind) {
     case "copilot-cloud":
       return new CopilotCloudExecutor();
@@ -27,7 +27,7 @@ export function getExecutor(kind: ExecutorKind): Executor {
     case "codex-cloud":
       return new MentionExecutor("codex-cloud", "Codex", "@codex");
     case "local":
-      return new LocalExecutor();
+      return new LocalExecutor(undefined, options);
     case "fake":
       return new FakeExecutor();
   }

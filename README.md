@@ -9,6 +9,16 @@
 </p>
 
 <p align="center">
+  <a href="https://github.com/Bakar404/elevate/actions/workflows/ci.yml"><img src="https://github.com/Bakar404/elevate/actions/workflows/ci.yml/badge.svg" alt="CI"></a>
+  <a href="https://bakar404.github.io/elevate/"><img src="https://github.com/Bakar404/elevate/actions/workflows/pages.yml/badge.svg" alt="Website"></a>
+  <a href="LICENSE"><img src="https://img.shields.io/github/license/Bakar404/elevate" alt="MIT License"></a>
+  <a href="https://github.com/Bakar404/elevate/stargazers"><img src="https://img.shields.io/github/stars/Bakar404/elevate?style=flat" alt="Stars"></a>
+  <img src="https://img.shields.io/badge/runs%20on-GitHub%20Copilot-8957e5?logo=githubcopilot&logoColor=white" alt="Runs on GitHub Copilot">
+  <img src="https://img.shields.io/badge/built-proof--first-2ea043" alt="Built proof-first">
+  <a href="CONTRIBUTING.md"><img src="https://img.shields.io/badge/PRs-welcome-blue" alt="PRs welcome"></a>
+</p>
+
+<p align="center">
   <a href="https://bakar404.github.io/elevate/">Website</a> ·
   <a href="#quick-start">Quick start</a> ·
   <a href="#how-it-works">How it works</a> ·
@@ -23,7 +33,7 @@
 
 ## What it does
 
-Proof-driven development, speculative decoding, weight-space editing, the next thing on Hacker News. elevate watches those sources for you. When something new would make one of your GitHub repos better, it raises a recommendation. It raises one only after checking two things:
+Proof-driven development, speculative decoding, weight-space editing, whatever lands next. elevate watches the sources you choose for you: news, research papers, AI lab blogs, or any feed you plug in. When something new would make one of your GitHub repos better, it raises a recommendation. It raises one only after checking two things:
 
 1. **Is the new thing actually legit?** It checks source credibility, independent corroboration, community signal, public code, and gets a skeptical model review.
 2. **Is the change sound for this repo, and will it make a measurable difference?** It checks fit with the repo, risk, and a concrete way to measure the impact.
@@ -65,7 +75,7 @@ The model runtime is the [GitHub Copilot SDK](https://github.com/github/copilot-
     <td width="50%">
       <picture>
         <source media="(prefers-color-scheme: light)" srcset="docs/images/chat-light.png">
-        <img src="docs/images/chat-dark.png" alt="Chat with the model picker showing GitHub prices">
+        <img src="docs/images/chat-dark.png" alt="Chat with the model picker open">
       </picture>
       <p align="center"><sub><b>Chat.</b> Ask about your repos and the radar. Pick the model for each conversation.</sub></p>
     </td>
@@ -98,7 +108,7 @@ pnpm dev                        # http://localhost:3100
 
 Sources come in two kinds:
 
-- **Feeds** (the HN front page, lab blogs, arXiv listings) are the same for everyone.
+- **Feeds** are the same for everyone. They start with the HN front page, AI lab blogs and arXiv listings, and any other source can be added as a connector.
 - **Searches for your repos** query HN, arXiv and GitHub with terms taken from each watched repo's profile: its stack and domains, such as `pgvector` or `speculative decoding`.
   - Every repo gets at least one query before shared terms fill the budget (`ELEVATE_FOCUS_QUERIES`, default 8).
   - Anything found that way is matched to those repos first.
@@ -114,19 +124,11 @@ An approved recommendation becomes a task graph:
 
 See [docs/architecture.md](docs/architecture.md) for the packages, jobs and data model, and [docs/design.md](docs/design.md) for the UI.
 
-## Models and pricing
+## Models
 
 Settings has two model pickers: one for the background agents (triage, the gates, swarm planning) and a default for chat. Each conversation can also choose its own model in the chat composer. Conversations can be deleted from the chat list.
 
-The model list comes live from your Copilot account, so it shows exactly what your plan allows. It is billed in [GitHub AI Credits](https://docs.github.com/en/copilot/reference/copilot-billing/models-and-pricing) (1 credit = $0.01):
-
-- Each model shows GitHub's price in **US dollars per 1M input and output tokens**.
-- **Auto** shows GitHub's 10% discount.
-- Models your plan disables are greyed out.
-
-elevate doesn't keep its own price table. Prices change when GitHub changes them.
-
-With a BYOK provider, you type the model id, and your provider bills you directly.
+The model list comes live from your Copilot account, so it shows exactly what your plan allows; models your plan disables are greyed out. With a BYOK provider, you type the model id.
 
 ## Built proof-first
 
@@ -223,3 +225,20 @@ In Docker, put `GITHUB_TOKEN` (and any BYOK key) in `.env`, because a container 
   - [Verus](https://github.com/verus-lang/verus)
   - the [PDD Kit](https://www.microsoft.com/en-us/research/blog/formally-verifying-agent-written-full-stack-web-apps-with-pdd-kit/) method
 - **Tests:** [Vitest](https://vitest.dev/), [Playwright](https://playwright.dev/)
+
+## Contributing
+
+New source connectors, executors and gate eval cases are the most useful contributions. See [CONTRIBUTING.md](CONTRIBUTING.md). Ask questions and share ideas in [Discussions](https://github.com/Bakar404/elevate/discussions), and [suggest a source](https://github.com/Bakar404/elevate/issues/new?template=new_source.yml) you think elevate should watch.
+
+If elevate is useful to you, a ⭐ helps other people find it.
+
+<a href="https://star-history.com/#Bakar404/elevate&Date">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="https://api.star-history.com/svg?repos=Bakar404/elevate&type=Date&theme=dark">
+    <img src="https://api.star-history.com/svg?repos=Bakar404/elevate&type=Date" alt="Star history chart" width="600">
+  </picture>
+</a>
+
+## License
+
+[MIT](LICENSE)

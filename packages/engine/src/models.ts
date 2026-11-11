@@ -3,20 +3,16 @@ import { eq, getSetting, setSetting, threads } from "@elevate/db";
 import type { Ctx } from "./context";
 import { resolveModelConfig } from "./context";
 
-/**
- * Demo mode has no Copilot session, so it lists real Copilot models at GitHub's published
- * per-token prices (USD per 1M tokens, https://docs.github.com/en/copilot/reference/copilot-billing/models-and-pricing).
- * With a Copilot login the live list and prices come from the runtime instead.
- */
+/** Demo mode has no Copilot session, so it lists real Copilot model ids. With a Copilot login the live list comes from the runtime. */
 export const DEMO_MODELS: ModelOption[] = [
-  { id: "auto", name: "Auto", discountPercent: 10, enabled: true },
-  { id: "gpt-6-luna", name: "GPT-6 Luna", vendor: "openai", price: { input: 0.1, output: 0.5, cachedInput: 0.01 }, enabled: true },
-  { id: "claude-haiku-5.5", name: "Claude Haiku 5.5", vendor: "anthropic", price: { input: 0.1, output: 0.5, cachedInput: 0.01 }, enabled: true },
-  { id: "gpt-6.1-terra", name: "GPT-6.1 Terra", vendor: "openai", price: { input: 1, output: 5, cachedInput: 0.05 }, enabled: true },
-  { id: "claude-sonnet-5.5", name: "Claude Sonnet 5.5", vendor: "anthropic", price: { input: 2, output: 10, cachedInput: 0.1 }, enabled: true },
-  { id: "gpt-6.1-sol", name: "GPT-6.1 Sol", vendor: "openai", price: { input: 2, output: 10, cachedInput: 0.1 }, enabled: true },
-  { id: "claude-opus-5.5", name: "Claude Opus 5.5", vendor: "anthropic", price: { input: 4, output: 20, cachedInput: 0.2 }, enabled: true },
-  { id: "gpt-6-astra", name: "GPT-6 Astra", vendor: "openai", price: { input: 10, output: 50, cachedInput: 1 }, enabled: true },
+  { id: "auto", name: "Auto", enabled: true },
+  { id: "gpt-6-luna", name: "GPT-6 Luna", vendor: "openai", enabled: true },
+  { id: "claude-haiku-5.5", name: "Claude Haiku 5.5", vendor: "anthropic", enabled: true },
+  { id: "gpt-6.1-terra", name: "GPT-6.1 Terra", vendor: "openai", enabled: true },
+  { id: "claude-sonnet-5.5", name: "Claude Sonnet 5.5", vendor: "anthropic", enabled: true },
+  { id: "gpt-6.1-sol", name: "GPT-6.1 Sol", vendor: "openai", enabled: true },
+  { id: "claude-opus-5.5", name: "Claude Opus 5.5", vendor: "anthropic", enabled: true },
+  { id: "gpt-6-astra", name: "GPT-6 Astra", vendor: "openai", enabled: true },
 ];
 
 const CACHE_MS = 10 * 60_000;

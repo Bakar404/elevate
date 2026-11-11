@@ -1,0 +1,24 @@
+name: Suggest a source
+description: A feed, site or community elevate should watch for new techniques
+labels: [source]
+body:
+  - type: input
+    id: url
+    attributes:
+      label: Source URL
+      description: Link to the RSS or Atom feed or the API if there is one, otherwise the site.
+    validations:
+      required: true
+  - type: textarea
+    id: why
+    attributes:
+      label: Why is it a good signal?
+      description: What kinds of techniques show up there first, and how credible is it?
+    validations:
+      required: true
+  - type: checkboxes
+    id: access
+    attributes:
+      label: Access
+      options:
+        - label: It has an official API or feed (no scraping needed)

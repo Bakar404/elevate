@@ -73,7 +73,7 @@ A calm, dark work surface over a living, dithered landscape. The background carr
 
 ## Models and chat
 
-- The model picker is a popover with a cmdk list showing GitHub's price for each model in $ per 1M tokens, input / output, as reported by the Copilot runtime. Models your plan disables appear greyed out, and a "Use <id>" row accepts any id (needed for BYOK).
+- The model picker is a popover with a cmdk list of the models your Copilot plan allows, with the vendor on the right. Models your plan disables appear greyed out, and a "Use <id>" row accepts any id (needed for BYOK).
 - Settings sets the background model and the chat default. The chat composer sets the model per conversation, and a change takes effect from the next message.
 - Deleting a conversation is a hover or focus trash button, followed by a confirmation dialog. It is removed optimistically and restored if the request fails.
 

@@ -240,6 +240,11 @@ body {
   --look-y: 0px;
   overflow: visible;
 }
+/* The light theme deepens sand for text contrast; Pip keeps a pale coat so its face stays readable. */
+:root.light .pip {
+  --pip-fur: oklch(0.87 0.1 85);
+  --pip-shade: oklch(0.7 0.11 80);
+}
 .pip-shadow { fill: #000; opacity: 0.22; transform-origin: 24px 44.5px; }
 .pip-body { transform-origin: 24px 42px; }
 .pip-antenna { transform-origin: 24px 13px; }

@@ -205,6 +205,7 @@ Last live run, on the Copilot default model:
 | `pnpm smoke:copilot` | One live call through the Copilot SDK or BYOK provider |
 | `pnpm proof` | Re-run the proof, mutation check, WASM build, differential test and negative control, then rewrite the receipt (needs Verus) |
 | `node scripts/diagrams.mjs` | Regenerate the README and website diagrams in both themes |
+| `pnpm --filter @elevate/web exec node ../../scripts/phone-shots.mjs` | Regenerate the website's phone screenshots from a running demo |
 
 ## Storage
 

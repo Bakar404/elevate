@@ -44,6 +44,8 @@ By default the PR is yours: when the Copilot coding agent finishes, elevate squa
 
 Repo profiles stay current: every few minutes elevate checks each watched repo, and when the default branch has a new commit it re-profiles the repo at that commit and re-matches it against known techniques.
 
+Pip, a small lookout in the sidebar, dozes when nothing is waiting, perks up when a recommendation is ready and gets busy while a swarm runs. Click it for a one-line status, or hide it from its bubble or ⌘K.
+
 It works on your phone too: below 768px the sidebar becomes a bottom tab bar, chat history opens in a drawer, and every page fits the screen with no sideways scrolling.
 
 The model runtime is the [GitHub Copilot SDK](https://github.com/github/copilot-sdk), so it runs on your Copilot subscription. You can bring your own key for Anthropic, OpenAI or Azure models. Swarms can run on:
@@ -120,6 +122,26 @@ Sources come in two kinds:
   - Anything found that way is matched to those repos first.
 
 Techniques that fail a gate are kept, but hidden, along with the reasons they failed.
+
+### News that fits your setup
+
+elevate only raises what you can act on. It works out what you have from your connection, and Settings → **What you can use** lets you switch products on or off yourself.
+
+| You connect | You hear about |
+|---|---|
+| GitHub Copilot | Copilot itself, and the model vendors on your plan's live model list |
+| Anthropic key | Claude models and Claude Code |
+| OpenAI key | GPT models and Codex |
+| Azure OpenAI | GPT models |
+
+Anything else is set aside before it costs a gate review, and listed with the reason under Radar → **Not for your setup**:
+
+- **Not connected.** The technique needs a product you don't have, such as Codex news for a Claude-only setup. Product feeds (Claude Code, Codex and Copilot CLI releases, OpenAI News) aren't even fetched.
+- **Outdated.** It is about a model version that has been replaced. What counts as current comes from your plan's model list and from the versions seen in incoming news, not from a list in the code, so it keeps up on its own.
+- **Not on your plan.** With Copilot, it names a model your plan doesn't list.
+- **Too old.** Feeds return their whole archive, so items published more than `ELEVATE_MAX_ITEM_AGE_DAYS` (default 60) ago are skipped.
+
+Switching a product on later sends what was held for it through the gates. Sources can be switched off, and your own RSS or Atom feeds added, from Radar → **Manage sources**.
 
 An approved recommendation becomes a task graph:
 

@@ -2,7 +2,7 @@ import { stats } from "@elevate/engine";
 import { cookies } from "next/headers";
 import { CommandPalette } from "@/components/command-palette";
 import { LiveRefresh } from "@/components/live-refresh";
-import { DEFAULT_LOGO, isLogoVariant, LOGO_COOKIE, SIDEBAR_COOKIE } from "@/lib/prefs";
+import { DEFAULT_LOGO, isLogoVariant, LOGO_COOKIE, PIP_COOKIE, SIDEBAR_COOKIE } from "@/lib/prefs";
 import { MobileTabBar, MobileTopBar } from "@/components/mobile-nav";
 import { BackToTop, ScrollProgress } from "@/components/scroll";
 import { Sidebar } from "@/components/sidebar";
@@ -21,9 +21,15 @@ export default async function AppLayout({ children }: { children: React.ReactNod
         counts={{ open: s.open, activeSwarms: s.activeSwarms }}
         logo={isLogoVariant(logo) ? logo : DEFAULT_LOGO}
         initialCollapsed={jar.get(SIDEBAR_COOKIE)?.value === "collapsed"}
+        pipHidden={jar.get(PIP_COOKIE)?.value === "off"}
       />
       <main className="relative min-w-0 flex-1 max-md:pb-[calc(4rem+env(safe-area-inset-bottom))]">
-        <MobileTopBar demo={ctx.demo} logo={isLogoVariant(logo) ? logo : DEFAULT_LOGO} />
+        <MobileTopBar
+          demo={ctx.demo}
+          logo={isLogoVariant(logo) ? logo : DEFAULT_LOGO}
+          counts={{ open: s.open, activeSwarms: s.activeSwarms }}
+          pipHidden={jar.get(PIP_COOKIE)?.value === "off"}
+        />
         {children}
       </main>
       <MobileTabBar counts={{ open: s.open, activeSwarms: s.activeSwarms }} />

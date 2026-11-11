@@ -89,6 +89,28 @@ const DEMO_ITEMS = [
     content: "Edit model weights directly and never write code again. No benchmarks yet, code coming soon.",
     points: 0,
   },
+  // Three that the demo workspace (Copilot with GPT and Claude models) can't act on, to show why they are set aside.
+  {
+    source: "demo://hn",
+    title: "GPT-5.4 prompt caching: cut llm inference cost on long prompts",
+    url: "https://example.com/gpt-5-4-prompt-caching",
+    content: "Reorder prompts so the stable prefix is cached. Written for GPT-5.4; newer models changed how caching is billed.",
+    points: 180,
+  },
+  {
+    source: "demo://hn",
+    title: "Codex cloud tasks: run parallel agent verification in sandboxes",
+    url: "https://example.com/codex-cloud-tasks",
+    content: "Codex can fan a change out to sandboxed agents and verify each result before opening a pull request.",
+    points: 210,
+  },
+  {
+    source: "demo://arxiv",
+    title: "Gemini 4 Argon long-context retrieval for llm inference gateways",
+    url: "https://example.com/gemini-long-context",
+    content: "Replace retrieval with a single long-context call. Requires Gemini 4 Argon's extended context window.",
+    points: 90,
+  },
   { source: "demo://hn", title: "Startup raises $50M Series B for AI note-taking", url: "https://example.com/funding", content: "Funding news.", points: 120 },
 ];
 
@@ -133,7 +155,7 @@ export async function seedDemo(ctx: Ctx, tenantId = "local") {
       signals: { points: i.points },
     })),
   );
-  await emit(ctx.db, { kind: "demo.seeded", level: "success", message: "Demo workspace ready: 3 repos, 5 items to triage", tenantId });
+  await emit(ctx.db, { kind: "demo.seeded", level: "success", message: `Demo workspace ready: 3 repos, ${DEMO_ITEMS.length} items to triage`, tenantId });
   await enqueue(ctx.db, "items.triage", {}, { dedupeKey: `items.triage:${tenantId}`, tenantId });
   return true;
 }

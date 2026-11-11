@@ -14,3 +14,4 @@ export * from "./demo";
 export { demoLLM } from "./fake";
 export * from "./search";
 export * from "./models";
+export * from "./access";

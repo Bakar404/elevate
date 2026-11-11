@@ -1,3 +1,4 @@
+import { ECOSYSTEMS } from "@elevate/sources";
 import { z } from "zod";
 
 // Schemas use .nullable() rather than .optional(): strict structured output needs every key present.
@@ -42,6 +43,14 @@ export const TriageSchema = z.object({
           appliesTo: z.array(z.string()).describe("Kinds of codebases/stacks that could adopt it"),
           prerequisites: z.array(z.string()),
           evidenceLinks: z.array(z.string()).describe("Paper, code, benchmark URLs mentioned"),
+          requires: z
+            .array(z.enum(ECOSYSTEMS))
+            .describe(
+              "AI vendors/products a team MUST have to adopt this: copilot (GitHub Copilot), openai (GPT models/API), codex (OpenAI Codex), anthropic (Claude models/API), claude-code, google (Gemini), xai (Grok). Use the most specific one. Empty when it works with any model or provider, or is open source",
+            ),
+          models: z
+            .array(z.string())
+            .describe("Specific model versions the item is ABOUT or depends on, as written (e.g. 'GPT-6.1', 'Claude Opus 5.5'). Not models merely compared against or used in an evaluation. Usually empty"),
         })
         .nullable(),
     }),
@@ -54,6 +63,11 @@ Mark an item relevant ONLY when it describes something concrete that an engineer
 News, funding, opinion, hiring, politics, product launches without technical substance => not relevant.
 Some items say "Found searching ... for: <repos>": they came from a search built from those repos' stacks. Judge them with those repos in mind;
 a new library, tool or method that one of those repos could adopt counts as relevant, but a mere keyword hit (an unrelated project that shares a name) does not.
+Timeliness matters. The prompt starts with today's date and the model versions that are current; trust those over your own memory, which is older.
+An item about a model or product version that has since been replaced (an announcement, guide or tip for a previous generation) => not relevant.
+An item published long ago that is only being re-shared => not relevant unless the technique itself is still new to most teams.
+A bare model or product launch is not a technique; it is relevant only when it gives a team something concrete to change (a new API capability, a migration, a pricing or context change worth acting on).
+For every technique, fill \`requires\` and \`models\` honestly: they decide which users see it. A general method demonstrated with one vendor's model does not require that vendor.
 Extract the technique precisely. Do not inflate claims beyond what the item says.`;
 
 export const MatchSchema = z.object({
@@ -75,7 +89,9 @@ export const MatchSchema = z.object({
 
 export const MATCH_SYSTEM = `You decide whether a newly published technique should be applied to specific existing repositories.
 Be selective: most techniques do NOT apply to most repos. Only mark applies=true when there is a specific, plausible change
-with a clear benefit for that repo's stack and domain. Generic advice ("add tests", "use AI") is never a match.`;
+with a clear benefit for that repo's stack and domain. Generic advice ("add tests", "use AI") is never a match.
+The prompt lists the AI products and models the user has. Never propose a change that depends on a product or model outside that list,
+and never propose adopting a model version older than one they already have.`;
 
 export const LegitimacySchema = z.object({
   legit: z.boolean().describe("Is this a real, substantiated technique (not hype, vaporware, or a misread claim)?"),
@@ -146,4 +162,5 @@ export const CHAT_SYSTEM = `You are Elevate, an agent that keeps a developer's G
 You can see the user's repos (profiles, files, code search), the knowledge radar (new techniques from Hacker News, AI labs, arXiv),
 and recommendations that passed two gates: (1) the technique is legitimate, (2) the change is sound and measurable for that repo.
 Use tools to ground every claim. Cite technique sources and repo files. Be concise and specific.
+Only suggest AI models and products the user has access to (ask \`list_access\` if unsure); never recommend a model version that has been superseded.
 You never write to repositories directly: propose recommendations, and the user approves swarms in the inbox.`;

@@ -1,5 +1,5 @@
 import { getRecommendation } from "@elevate/engine";
-import { ArrowLeft, ExternalLink, GitPullRequestDraft } from "lucide-react";
+import { ArrowLeft, Ban, ExternalLink, GitPullRequestDraft } from "lucide-react";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { GateCard } from "@/components/gate-card";
@@ -55,6 +55,18 @@ export default async function RecommendationPage({ params }: { params: Promise<{
           </div>
         </div>
       </header>
+
+      {r.access.reason && (
+        <div className="mt-6 flex items-start gap-3 rounded-xl border border-sand/30 bg-sand/10 px-4 py-3 text-sm" role="note" data-testid="access-note">
+          <Ban className="mt-0.5 size-4 shrink-0 text-sand" aria-hidden />
+          <p className="text-pretty">
+            <span className="font-medium">This may not apply to you any more.</span> <span className="text-muted">{r.access.reason}.</span>{" "}
+            <Link href="/settings#access" className="underline decoration-line-strong underline-offset-4 hover:text-fg">
+              Change what you have
+            </Link>
+          </p>
+        </div>
+      )}
 
       <div className="mt-6">
         <RecActions id={r.id} status={r.status} repo={r.repo} allowSwarm={r.allowSwarm} demo={ctx.demo} />

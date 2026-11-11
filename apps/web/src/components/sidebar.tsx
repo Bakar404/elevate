@@ -8,6 +8,7 @@ import { useCallback, useEffect, useState, type ReactElement } from "react";
 import { cn } from "@/lib/utils";
 import { setPrefCookie, SIDEBAR_COOKIE, SIDEBAR_EVENT, type LogoVariant } from "@/lib/prefs";
 import { LogoMark } from "./logo";
+import { PipCompanion } from "./mascot";
 import { ThemeToggle } from "./theme";
 import { Badge, Tip } from "./ui";
 
@@ -30,11 +31,13 @@ export function Sidebar({
   counts,
   logo,
   initialCollapsed = false,
+  pipHidden = false,
 }: {
   demo: boolean;
   counts: { open: number; activeSwarms: number };
   logo?: LogoVariant;
   initialCollapsed?: boolean;
+  pipHidden?: boolean;
 }) {
   const pathname = usePathname();
   const [collapsed, setCollapsed] = useState(initialCollapsed);
@@ -69,7 +72,7 @@ export function Sidebar({
       data-testid="sidebar"
       data-collapsed={collapsed}
       className={cn(
-        "sticky top-0 z-20 flex h-dvh shrink-0 flex-col overflow-hidden border-r border-line bg-bg/80 px-3 py-4 backdrop-blur-md",
+        "sticky top-0 z-20 flex h-dvh shrink-0 flex-col overflow-x-clip border-r border-line bg-bg/80 px-3 py-4 backdrop-blur-md",
         "transition-[width] duration-300 ease-[var(--ease-drawer)] max-md:hidden",
         collapsed ? "w-16" : "w-56",
       )}
@@ -117,6 +120,7 @@ export function Sidebar({
         })}
       </nav>
       <div className="mt-auto flex flex-col gap-1.5">
+        <PipCompanion counts={counts} compact={collapsed} initialHidden={pipHidden} />
         {tip("Toggle theme", <ThemeToggle labelClassName={label} />)}
         {tip(
           "Command ⌘K",

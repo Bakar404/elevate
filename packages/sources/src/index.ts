@@ -1,7 +1,9 @@
 import { XMLParser } from "fast-xml-parser";
+import { isEcosystem, type Ecosystem } from "./ecosystem";
 import { parseGitHubSearch, type FocusBackend } from "./focus";
 
 export * from "./focus";
+export * from "./ecosystem";
 
 export type RawItem = {
   externalId?: string;
@@ -191,12 +193,17 @@ export function defaultSources(): SourceDef[] {
       url: `https://hn.algolia.com/api/v1/search_by_date?tags=story&hitsPerPage=60&numericFilters=points>100,created_at_i>${day()}`,
       credibility: 45,
     },
-    { kind: "rss", name: "OpenAI News", url: "https://openai.com/news/rss.xml", credibility: 85 },
+    { kind: "rss", name: "OpenAI News", url: "https://openai.com/news/rss.xml", credibility: 85, config: { ecosystem: "openai" } },
     { kind: "rss", name: "Google DeepMind", url: "https://deepmind.google/blog/rss.xml", credibility: 85 },
     { kind: "rss", name: "Google Research", url: "https://research.google/blog/rss/", credibility: 85 },
     { kind: "rss", name: "Microsoft Research", url: "https://www.microsoft.com/en-us/research/feed/", credibility: 80 },
     { kind: "rss", name: "Hugging Face Blog", url: "https://huggingface.co/blog/feed.xml", credibility: 75 },
     { kind: "rss", name: "GitHub Blog", url: "https://github.blog/feed/", credibility: 75 },
+    { kind: "rss", name: "GitHub Changelog", url: "https://github.blog/changelog/feed/", credibility: 80 },
+    // Product feeds: swept only when the user has that product (see `sourceEcosystem`).
+    { kind: "rss", name: "Claude Code releases", url: "https://github.com/anthropics/claude-code/releases.atom", credibility: 80, config: { ecosystem: "claude-code" } },
+    { kind: "rss", name: "Codex releases", url: "https://github.com/openai/codex/releases.atom", credibility: 80, config: { ecosystem: "codex" } },
+    { kind: "rss", name: "Copilot CLI releases", url: "https://github.com/github/copilot-cli/releases.atom", credibility: 80, config: { ecosystem: "copilot" } },
     { kind: "rss", name: "Simon Willison", url: "https://simonwillison.net/atom/everything/", credibility: 70 },
     {
       kind: "arxiv",
@@ -209,6 +216,17 @@ export function defaultSources(): SourceDef[] {
     { kind: "arxiv", name: "arXiv · for your repos", url: `${FOCUS_SCHEME}arxiv`, credibility: 60, config: { focus: true } },
     { kind: "github", name: "New on GitHub · for your repos", url: `${FOCUS_SCHEME}github`, credibility: 50, config: { focus: true } },
   ];
+}
+
+/**
+ * The ecosystem a source is entirely about, if any: from its config, or for a built-in source that
+ * was stored before sources carried one, from the built-in definition with the same URL.
+ */
+export function sourceEcosystem(src: { url: string; config?: Record<string, unknown> | null }): Ecosystem | undefined {
+  const own = src.config?.ecosystem;
+  if (isEcosystem(own)) return own;
+  const builtIn = defaultSources().find((d) => d.url === src.url)?.config?.ecosystem;
+  return isEcosystem(builtIn) ? builtIn : undefined;
 }
 
 /** HN query URLs embed a time window; refresh it on every sweep. */

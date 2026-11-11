@@ -1,5 +1,5 @@
 import type { RecommendationRow } from "@elevate/engine";
-import { ArrowUpRight, GitPullRequestDraft } from "lucide-react";
+import { ArrowUpRight, Ban, GitPullRequestDraft } from "lucide-react";
 import Link from "next/link";
 import { ago } from "@/lib/utils";
 import { Badge, ScoreRing, SpotlightCard, type Tone } from "./ui";
@@ -44,6 +44,11 @@ export function RecCard({ r, index = 0 }: { r: RecommendationRow; index?: number
           <p className="mt-1.5 line-clamp-2 text-sm text-muted">{r.hypothesis.expectedImpact}</p>
           <div className="mt-3 flex flex-wrap items-center gap-1.5">
             <StatusBadge status={r.status} />
+            {r.blocked && (
+              <Badge tone="sand" title={r.blocked}>
+                <Ban /> not for your setup
+              </Badge>
+            )}
             <Badge>effort {effort[r.hypothesis.effort] ?? r.hypothesis.effort}</Badge>
             <Badge tone={r.hypothesis.risk === "high" ? "danger" : r.hypothesis.risk === "medium" ? "sand" : "neutral"}>{r.hypothesis.risk} risk</Badge>
             {r.status === "pr_opened" && (

@@ -1,7 +1,8 @@
 import { FakeLLM, type JsonRequest } from "@elevate/agent";
+import { inferTags } from "@elevate/sources";
 
 const TECH_WORDS =
-  /proof|verif|formal|test|fuzz|agent|llm|inference|decod|compil|rust|wasm|performance|benchmark|weight|retriev|rag|type|security|cache|quantiz|distill|embedding|vector|parser|kernel|spec/i;
+  /gpt|claude|codex|copilot|gemini|prompt|proof|verif|formal|test|fuzz|agent|llm|inference|decod|compil|rust|wasm|performance|benchmark|weight|retriev|rag|type|security|cache|quantiz|distill|embedding|vector|parser|kernel|spec/i;
 
 const words = (s: string) => new Set(s.toLowerCase().match(/[a-z][a-z0-9+-]{3,}/g) ?? []);
 const num = (s: string, re: RegExp, fallback = 0) => Number(s.match(re)?.[1] ?? fallback);
@@ -34,18 +35,21 @@ export function demoLLM(): FakeLLM {
           const t = title!.trim();
           const relevant = TECH_WORDS.test(t);
           const name = t.split(/[:\u2013\u2014(]/)[0]!.trim().slice(0, 60);
+          const tags = inferTags(t);
           return {
             index: Number(i),
             relevant,
             technique: relevant
               ? {
                   name,
-                  summary: (body ?? "").trim().slice(0, 240) || t,
+                  summary: (body ?? "").replace(/^Published: .*\n?/, "").trim().slice(0, 240) || t,
                   category: /verif|proof|test|fuzz|formal|\bspec\b/i.test(t) ? "testing-verification" : /infer|decod|quantiz/i.test(t) ? "llm-inference" : "developer-tooling",
                   claimedBenefits: ["Fewer defects", "Faster iteration"],
                   appliesTo: [...words(t)].slice(0, 5),
                   prerequisites: [],
                   evidenceLinks: [url!],
+                  requires: tags.requires,
+                  models: tags.models.map((m) => m.label),
                 }
               : null,
           };

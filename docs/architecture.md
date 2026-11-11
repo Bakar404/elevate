@@ -36,12 +36,30 @@ Every table has a `tenant_id`, which is `local` for now.
 | `repos.sync` | List your repos (every 5 minutes; `ELEVATE_SYNC_MINUTES`). For repos whose `pushed_at` moved, read the default-branch head SHA | `repo.profile` for watched repos whose head differs from the profiled commit |
 | `repo.profile` | Read the README, manifests and tree at the head commit; model writes the profile; embed it; store `profiled_sha` | `repo.match` |
 | `sources.sweep` | Every hour, fan out to each enabled source | `source.fetch` |
-| `source.fetch` | Fetch and dedupe items | `items.triage` |
-| `items.triage` | Model keeps engineering-relevant items and extracts techniques; near-duplicates (cosine ≥ 0.82) merge | `technique.legitimacy` |
+| `sources.sweep` (cont.) | Feeds about a product the user doesn't have are skipped | |
+| `source.fetch` | Fetch and dedupe items; drop ones published more than `ELEVATE_MAX_ITEM_AGE_DAYS` ago | `items.triage` |
+| `items.triage` | Model keeps engineering-relevant items and extracts techniques, tagging each with the AI products it requires and the model versions it is about; near-duplicates (cosine ≥ 0.82) merge | `technique.legitimacy`, unless the user can't act on it |
 | `technique.legitimacy` | **Gate 1**: evidence prior (credibility, corroboration, HN signal, public code, cited links) plus a skeptical review, decided by `legitimacyDecision` | `technique.match` if passed |
 | `technique.match` / `repo.match` | Top-K repos by embedding, then the model judges fit and writes a concrete change hypothesis | `recommendation.soundness` |
 | `recommendation.soundness` | **Gate 2**: reads the touchpoint files, gets a review of fit, risk, impact and measurement, decided by `soundnessDecision` | `open` (inbox) or `gated_out` |
 | `swarm.run` | Plan the DAG, run it on the chosen executor through the guard, open a draft PR | `pr_opened` or `failed` |
+
+### Access: what the user can act on
+
+`packages/sources/src/ecosystem.ts` is pure: it finds vendors and model versions in text (`findModels`, `detectEcosystems`), and `judgeAccess` decides whether a technique is usable given what the user has. `packages/engine/src/access.ts` builds that profile:
+
+- **Ecosystems** come from the provider (`detectAccess`), the vendors of the enabled models on a Copilot plan, an explicitly chosen executor, and the user's own switches (`access.overrides` in settings).
+- **Available models** are the plan's live list, when the provider can list them.
+- **Known models** are that list plus every version named in stored techniques and recent item titles. A version is superseded when a newer one on the same line is known and the plan doesn't still offer it. Nothing is hardcoded, so this can't go stale with the code.
+
+The verdict is computed when it is used, not stored, so it follows the user's settings:
+
+- triage holds unusable techniques back from Gate 1;
+- `matchTechnique` returns without calling the model;
+- the read models (`radar`, `discoveryFeed`, `listRecommendations`, `stats`) carry the verdict, so the UI can set things aside and say why;
+- `recheckAccess` runs after a settings change and queues whatever is now usable.
+
+This sits in front of the gates and never lets anything through them, so the proved kernel is unchanged.
 
 Status changes go through `applyEvent`. It calls the proved `transition` function and appends to `history`, so every status can be replayed from its history; the tests check this.
 

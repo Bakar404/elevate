@@ -165,6 +165,10 @@ export type TechniqueClaims = {
   appliesTo: string[];
   prerequisites: string[];
   evidenceLinks: string[];
+  /** AI ecosystems the technique is tied to (see @elevate/sources `Ecosystem`). Empty = works with anything; absent = stored before tagging. */
+  requires?: string[];
+  /** Model versions the technique is about, as written (e.g. "GPT-6.1", "Claude Opus 5.5"). */
+  models?: string[];
 };
 
 export type GateResult = {

@@ -5,6 +5,7 @@ import { Switch as BaseSwitch } from "@base-ui/react/switch";
 import { Tooltip as BaseTooltip } from "@base-ui/react/tooltip";
 import NumberFlow from "@number-flow/react";
 import { cva, type VariantProps } from "class-variance-authority";
+import { X } from "lucide-react";
 import { useRef, type ComponentProps, type ReactNode } from "react";
 import { cn } from "@/lib/utils";
 import { scoreTone, type Tone } from "@/lib/tone";
@@ -136,7 +137,13 @@ export function Dialog({
             className,
           )}
         >
-          <BaseDialog.Title className="text-base font-semibold">{title}</BaseDialog.Title>
+          <BaseDialog.Close
+            aria-label="Close"
+            className="absolute right-3 top-3 grid size-8 place-items-center rounded-lg text-faint transition-colors hover:bg-ink/5 hover:text-fg"
+          >
+            <X className="size-4" />
+          </BaseDialog.Close>
+          <BaseDialog.Title className="pr-8 text-base font-semibold">{title}</BaseDialog.Title>
           {description && <BaseDialog.Description className="mt-1 text-sm text-muted">{description}</BaseDialog.Description>}
           <div className="mt-5">{children}</div>
         </BaseDialog.Popup>

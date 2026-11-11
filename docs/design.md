@@ -62,6 +62,10 @@ A calm, dark work surface over a living, dithered landscape. The background carr
   - A repo that is being worked on, or that has recommendations waiting, pulses.
   - Hovering a node dims everything that isn't connected to it.
   - All motion is SVG/SMIL and CSS and stops under `prefers-reduced-motion`.
+- **Pip:** the lookout in the sidebar (`components/mascot.tsx`), an inline SVG animated with CSS only. Its mood comes from the same counts as the nav badges: dozing when nothing is waiting, bouncing with a pinging antenna when a recommendation is ready, wiggling with a blue light while a swarm runs. Its eyes follow the pointer, a click makes it hop and opens a one-line status, and "Hide Pip" (or ⌘K) puts it away, remembered in a cookie. On phones it sits in the top bar; under `prefers-reduced-motion` it holds still.
+- **Set aside, not hidden:** news the user can't act on gets a sand badge (`outdated`, `not connected`, `not on your plan`) and its own Radar tab, with the reason in a sentence. The "Tuned for" strip on Home and Radar says whose news this is and links to the switches in Settings.
+- **Radar list:** filter, category chips and sort run in the browser (`components/techniques.tsx`); they appear once there are more than three techniques.
+- **Rails:** a sideways rail fades at an edge only while there is more to scroll that way (scroll-driven animation on the mask), so a rail that fits is not clipped.
 - **Logo:** five drafts are available at `/brand` (Ascent, Summit, Steps, Lift, Contour). Picking one sets a cookie, and the sidebar and map hub update. The favicon is the Ascent mark.
 
 ## Scrolling and search

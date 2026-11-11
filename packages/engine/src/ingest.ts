@@ -1,7 +1,8 @@
 import { cosine } from "@elevate/agent";
-import { and, emit, enqueue, eq, inArray, items, repos, sources, techniques, type ItemSignals } from "@elevate/db";
+import { and, desc, emit, enqueue, eq, inArray, items, repos, sources, sql, techniques, type ItemSignals } from "@elevate/db";
 import {
   buildFocusQueries,
+  compareVersions,
   defaultFetch,
   defaultSources,
   fetchFocused,
@@ -11,8 +12,13 @@ import {
   refreshSourceUrl,
   type FocusBackend,
   type Fetcher,
+  ECOSYSTEM_LABEL,
+  findModels,
+  isEcosystem,
+  sourceEcosystem,
   type RawItem,
 } from "@elevate/sources";
+import { accessProfile, resetAccessCache, verdictFor } from "./access";
 import type { Ctx } from "./context";
 import { TRIAGE_SYSTEM, TriageSchema } from "./prompts";
 
@@ -36,8 +42,14 @@ export async function sweepSources(ctx: Ctx, tenantId = "local") {
     .select()
     .from(sources)
     .where(and(eq(sources.tenantId, tenantId), eq(sources.enabled, true)));
-  for (const s of rows) await enqueue(ctx.db, "source.fetch", { sourceId: s.id }, { dedupeKey: `source.fetch:${s.id}` });
-  return rows.length;
+  // A feed that is only about a product the user doesn't have is not fetched at all.
+  const have = new Set((await accessProfile(ctx)).ecosystems);
+  const due = rows.filter((s) => {
+    const eco = sourceEcosystem(s);
+    return !eco || have.has(eco);
+  });
+  for (const s of due) await enqueue(ctx.db, "source.fetch", { sourceId: s.id }, { dedupeKey: `source.fetch:${s.id}` });
+  return due.length;
 }
 
 export async function fetchSourceItems(ctx: Ctx, sourceId: string) {
@@ -48,7 +60,14 @@ export async function fetchSourceItems(ctx: Ctx, sourceId: string) {
     const raw = backend ? await fetchFocusedItems(ctx, src.tenantId, backend) : await fetchSource({ ...src, url: refreshSourceUrl(src) }, ctx.fetcher);
     let inserted = 0;
     let refocused = 0;
+    let stale = 0;
+    const cutoff = Date.now() - MAX_AGE_DAYS * DAY;
     for (const r of raw) {
+      // Feeds return their whole archive: last year's launch post is not news.
+      if (r.publishedAt && r.publishedAt.getTime() < cutoff) {
+        stale++;
+        continue;
+      }
       const res = await ctx.db
         .insert(items)
         .values({
@@ -71,7 +90,7 @@ export async function fetchSourceItems(ctx: Ctx, sourceId: string) {
     if (inserted || refocused) {
       await emit(ctx.db, {
         kind: "source.fetched",
-        message: `${src.name}: ${inserted} new items${refocused ? `, ${refocused} seen before now tied to your repos` : ""}`,
+        message: `${src.name}: ${inserted} new items${refocused ? `, ${refocused} seen before now tied to your repos` : ""}${stale ? ` (${stale} older than ${MAX_AGE_DAYS} days skipped)` : ""}`,
         data: { sourceId: src.id },
       });
       await enqueue(ctx.db, "items.triage", {}, { dedupeKey: `items.triage:${src.tenantId}`, tenantId: src.tenantId });
@@ -85,6 +104,10 @@ export async function fetchSourceItems(ctx: Ctx, sourceId: string) {
     throw err;
   }
 }
+
+const DAY = 24 * 3600 * 1000;
+/** Items published longer ago than this are not ingested or triaged. */
+export const MAX_AGE_DAYS = Number(process.env.ELEVATE_MAX_ITEM_AGE_DAYS ?? 60);
 
 const FOCUS_QUERIES = Number(process.env.ELEVATE_FOCUS_QUERIES ?? 8);
 
@@ -141,6 +164,16 @@ async function attachFocus(ctx: Ctx, tenantId: string, r: RawItem) {
     .where(eq(items.id, row.id));
   return true;
 }
+/** The highest version on each model line, e.g. ["GPT-6.1", "Claude Opus 5.5"]. */
+function newestPerLine(models: { family: string; version: number[]; label: string }[]): string[] {
+  const best = new Map<string, { version: number[]; label: string }>();
+  for (const m of models) {
+    const b = best.get(m.family);
+    if (!b || compareVersions(m.version, b.version) > 0) best.set(m.family, m);
+  }
+  return [...best.values()].map((m) => m.label);
+}
+
 export function slugify(s: string): string {
   return s
     .toLowerCase()
@@ -155,12 +188,32 @@ const TRIAGE_BATCH = 15;
 /** Classify new items, extract techniques and cluster them into de-duplicated technique records. */
 export async function triageItems(ctx: Ctx, tenantId = "local", maxItems = 45) {
   const pending = await ctx.db
-    .select({ item: items, credibility: sources.credibility, sourceName: sources.name })
+    .select({ item: items, credibility: sources.credibility, sourceName: sources.name, sourceUrl: sources.url, sourceConfig: sources.config })
     .from(items)
     .innerJoin(sources, eq(items.sourceId, sources.id))
     .where(and(eq(items.tenantId, tenantId), eq(items.status, "new")))
+    // Newest first, so a backlog never delays today's news.
+    .orderBy(sql`${items.publishedAt} desc nulls last`, desc(items.createdAt))
     .limit(maxItems);
   if (!pending.length) return { processed: 0, techniques: 0 };
+
+  // A backlog from before the age limit existed: dismiss without spending a model call.
+  const cutoff = Date.now() - MAX_AGE_DAYS * DAY;
+  const tooOld = pending.filter((p) => p.item.publishedAt && p.item.publishedAt.getTime() < cutoff);
+  if (tooOld.length) {
+    await ctx.db.update(items).set({ status: "irrelevant" }).where(inArray(items.id, tooOld.map((p) => p.item.id)));
+  }
+  const fresh = pending.filter((p) => !tooOld.includes(p));
+  const access = await accessProfile(ctx);
+  const header = [
+    `Today is ${new Date().toISOString().slice(0, 10)}.`,
+    `The user has: ${access.ecosystems.map((e) => ECOSYSTEM_LABEL[e]).join(", ") || "no AI products connected"}.`,
+    access.available.length ? `Models on their plan right now: ${access.available.map((m) => m.label).join(", ")}.` : "",
+    access.known.length ? `Newest model versions seen so far: ${newestPerLine(access.known).join(", ")}. Anything older on the same line is superseded.` : "",
+  ]
+    .filter(Boolean)
+    .join("\n");
+  const held: string[] = [];
 
   const known = await ctx.db
     .select({ id: techniques.id, slug: techniques.slug, embedding: techniques.embedding })
@@ -179,14 +232,16 @@ export async function triageItems(ctx: Ctx, tenantId = "local", maxItems = 45) {
   const foundFor = (s: ItemSignals) =>
     s.focus ? `\nFound searching "${s.focus.query}" for: ${s.focus.repoIds.map((id) => repoNames.get(id)).filter(Boolean).slice(0, 4).join("; ")}` : "";
 
-  for (let i = 0; i < pending.length; i += TRIAGE_BATCH) {
-    const batch = pending.slice(i, i + TRIAGE_BATCH);
-    const prompt = batch
-      .map(
-        ({ item, sourceName }, idx) =>
-          `[${idx}] (${sourceName}) ${item.title}\nURL: ${item.url}${foundFor(item.signals)}\n${(item.content ?? "").slice(0, 600)}`,
-      )
-      .join("\n\n");
+  for (let i = 0; i < fresh.length; i += TRIAGE_BATCH) {
+    const batch = fresh.slice(i, i + TRIAGE_BATCH);
+    const prompt =
+      `${header}\n\n` +
+      batch
+        .map(
+          ({ item, sourceName }, idx) =>
+            `[${idx}] (${sourceName}) ${item.title}\nURL: ${item.url}${item.publishedAt ? `\nPublished: ${item.publishedAt.toISOString().slice(0, 10)}` : ""}${foundFor(item.signals)}\n${(item.content ?? "").slice(0, 600)}`,
+        )
+        .join("\n\n");
     let result;
     try {
       result = await ctx.llm.json({ task: "triage", system: TRIAGE_SYSTEM, prompt, schema: TriageSchema });
@@ -201,7 +256,7 @@ export async function triageItems(ctx: Ctx, tenantId = "local", maxItems = 45) {
     const byIndex = new Map(result.results.map((r) => [r.index, r]));
 
     for (let idx = 0; idx < batch.length; idx++) {
-      const { item } = batch[idx]!;
+      const { item, sourceUrl, sourceConfig } = batch[idx]!;
       const r = byIndex.get(idx);
       if (!r?.relevant || !r.technique) {
         await ctx.db.update(items).set({ status: "irrelevant" }).where(eq(items.id, item.id));
@@ -240,6 +295,10 @@ export async function triageItems(ctx: Ctx, tenantId = "local", maxItems = 45) {
               appliesTo: t.appliesTo,
               prerequisites: t.prerequisites,
               evidenceLinks: t.evidenceLinks,
+              // News from a product's own feed is about that product unless triage said otherwise.
+              requires: t.requires.length ? t.requires.filter(isEcosystem) : [sourceEcosystem({ url: sourceUrl, config: sourceConfig })].filter(isEcosystem),
+              // The model's list plus any version written in the name itself.
+              models: [...new Set([...t.models, ...findModels(t.name).map((m) => m.label)])],
             },
             embedding,
             novelty,
@@ -265,8 +324,21 @@ export async function triageItems(ctx: Ctx, tenantId = "local", maxItems = 45) {
     }
   }
 
+  // New titles may have raised what counts as the newest model version.
+  resetAccessCache(ctx);
+  const now = await accessProfile(ctx);
   for (const id of created) {
+    const [t] = await ctx.db.select().from(techniques).where(eq(techniques.id, id));
+    const verdict = t ? verdictFor(t, now) : { usable: true as const };
+    // Nothing the user can act on is worth a legitimacy review; it is kept on the Radar with the reason.
+    if (!verdict.usable) {
+      held.push(`${t!.name} (${verdict.reason})`);
+      continue;
+    }
     await enqueue(ctx.db, "technique.legitimacy", { techniqueId: id }, { dedupeKey: `technique.legitimacy:${id}` });
+  }
+  if (held.length) {
+    await emit(ctx.db, { kind: "techniques.held", message: `Set aside ${held.length} that ${held.length === 1 ? "doesn't" : "don't"} fit your setup: ${held.slice(0, 3).join("; ")}${held.length > 3 ? "…" : ""}` });
   }
   if (created.length) {
     await emit(ctx.db, {

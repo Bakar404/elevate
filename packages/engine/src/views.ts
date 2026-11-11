@@ -1,4 +1,6 @@
 import { asc, auditLog, desc, eq, events, items, recommendations, repos, sources, sql, swarms, swarmTasks, techniques, threads, messages } from "@elevate/db";
+import { defaultSources, ECOSYSTEM_LABEL, sourceEcosystem } from "@elevate/sources";
+import { accessProfile, accessView, verdictFor } from "./access";
 import type { Ctx } from "./context";
 import { focusQueries } from "./ingest";
 
@@ -18,6 +20,15 @@ export async function stats(ctx: Ctx) {
       (select count(*)::int from recommendations where status = 'pr_opened') as prs,
       (select count(*)::int from swarms where status in ('queued','planning','running')) as "activeSwarms"
   `).then((r) => (Array.isArray(r) ? r : (r as { rows: Record<string, number>[] }).rows));
+  // Open recommendations the user can no longer act on are shown as filtered, so don't count them as waiting.
+  const access = await accessProfile(ctx);
+  const openRecs = await ctx.db
+    .select({ name: techniques.name, summary: techniques.summary, claims: techniques.claims })
+    .from(recommendations)
+    .innerJoin(techniques, eq(recommendations.techniqueId, techniques.id))
+    .where(eq(recommendations.status, "open"));
+  const blocked = openRecs.filter((t) => !verdictFor(t, access).usable).length;
+  if (row) row.open = Math.max(0, (row.open ?? 0) - blocked);
   return row as {
     repos: number;
     allowedRepos: number;
@@ -53,14 +64,20 @@ const recColumns = {
 export type RecommendationRow = Awaited<ReturnType<typeof listRecommendations>>[number];
 
 export async function listRecommendations(ctx: Ctx, status?: string) {
-  return ctx.db
-    .select(recColumns)
+  const access = await accessProfile(ctx);
+  const rows = await ctx.db
+    .select({ ...recColumns, techniqueSummary: techniques.summary, claims: techniques.claims })
     .from(recommendations)
     .innerJoin(repos, eq(recommendations.repoId, repos.id))
     .innerJoin(techniques, eq(recommendations.techniqueId, techniques.id))
     .where(status ? eq(recommendations.status, status as never) : undefined)
     .orderBy(desc(recommendations.score), desc(recommendations.createdAt))
     .limit(200);
+  return rows.map(({ techniqueSummary, claims, ...r }) => ({
+    ...r,
+    /** Set when the user can't act on the technique any more (replaced model, product not connected). */
+    blocked: accessView({ name: r.technique, summary: techniqueSummary, claims }, access).reason,
+  }));
 }
 
 export async function getRecommendation(ctx: Ctx, id: string) {
@@ -71,6 +88,7 @@ export async function getRecommendation(ctx: Ctx, id: string) {
     .innerJoin(techniques, eq(recommendations.techniqueId, techniques.id))
     .where(eq(recommendations.id, id));
   if (!rec) return undefined;
+  const access = accessView({ name: rec.technique, summary: rec.techniqueSummary, claims: rec.claims }, await accessProfile(ctx));
   const [sourcesFor, swarmRows] = await Promise.all([
     ctx.db
       .select({ title: items.title, url: items.url, source: sources.name, credibility: sources.credibility, points: items.signals })
@@ -79,7 +97,7 @@ export async function getRecommendation(ctx: Ctx, id: string) {
       .where(eq(items.techniqueId, rec.techniqueId)),
     ctx.db.select().from(swarms).where(eq(swarms.recommendationId, id)).orderBy(desc(swarms.createdAt)),
   ]);
-  return { ...rec, items: sourcesFor, swarms: swarmRows };
+  return { ...rec, access, items: sourcesFor, swarms: swarmRows };
 }
 
 export async function listRepos(ctx: Ctx) {
@@ -195,7 +213,9 @@ export async function radar(ctx: Ctx) {
   const recs = await ctx.db
     .select({ techniqueId: recommendations.techniqueId, status: recommendations.status })
     .from(recommendations);
+  const access = await accessProfile(ctx);
   return techs.map((t) => ({
+    access: accessView(t, access),
     id: t.id,
     name: t.name,
     summary: t.summary,
@@ -237,6 +257,8 @@ export async function discoveryFeed(ctx: Ctx, opts: { limit?: number; repoOnly?:
       kind: sources.kind,
       techniqueId: items.techniqueId,
       technique: techniques.name,
+      techniqueSummary: techniques.summary,
+      claims: techniques.claims,
       legit: sql<boolean | null>`(${techniques.legitimacy}->>'passed')::boolean`,
     })
     .from(items)
@@ -253,9 +275,19 @@ export async function discoveryFeed(ctx: Ctx, opts: { limit?: number; repoOnly?:
       ),
     )
     .orderBy(desc(items.createdAt), desc(items.publishedAt))
-    .limit(limit);
+    // Over-fetch when filtering, since items the user can't act on are dropped below.
+    .limit(opts.hideHype ? limit * 3 : limit);
   const name = await repoNames(ctx);
-  return rows.map(({ signals, ...r }) => ({
+  const access = await accessProfile(ctx);
+  return rows
+    .map(({ techniqueSummary, claims, ...r }) => ({
+      ...r,
+      /** Why the user can't act on this item's technique, if they can't. */
+      blocked: r.technique ? accessView({ name: r.technique, summary: techniqueSummary ?? "", claims }, access).reason : null,
+    }))
+    .filter((r) => !opts.hideHype || !r.blocked)
+    .slice(0, limit)
+    .map(({ signals, ...r }) => ({
     ...r,
     points: signals.points ?? null,
     stars: signals.stars ?? null,
@@ -270,7 +302,55 @@ export async function searchPlan(ctx: Ctx) {
   return (await focusQueries(ctx)).map((q) => ({ term: q.term, kind: q.kind, repos: q.repoIds.map(name).filter(Boolean) as string[] }));
 }
 export async function listSources(ctx: Ctx) {
-  return ctx.db.select().from(sources).orderBy(desc(sources.credibility));
+  const builtIn = new Set(defaultSources().map((d) => d.url.replace(/created_at_i>\d+/, "")));
+  const counts = await ctx.db
+    .select({ sourceId: items.sourceId, n: sql<number>`count(*)::int`, kept: sql<number>`count(*) filter (where ${items.status} = 'triaged')::int` })
+    .from(items)
+    .groupBy(items.sourceId);
+  const rows = await ctx.db.select().from(sources).orderBy(desc(sources.credibility));
+  const have = new Set((await accessProfile(ctx)).ecosystems);
+  return rows.map((s) => {
+    const c = counts.find((x) => x.sourceId === s.id);
+    const eco = sourceEcosystem(s);
+    return {
+      ...s,
+      /** Set when the feed is about a product the user doesn't have, so sweeps skip it. */
+      paused: eco && !have.has(eco) ? `Skipped: you haven't connected ${ECOSYSTEM_LABEL[eco]}` : null,
+      /** Built-in sources come back on every sweep, so they can be switched off but not removed. */
+      builtIn: s.url.startsWith("focus://") || s.url.startsWith("demo://") || builtIn.has(s.url.replace(/created_at_i>\d+/, "")),
+      items: c?.n ?? 0,
+      /** How many of its items turned out to describe a technique: a feed with many items and none kept is noise. */
+      kept: c?.kept ?? 0,
+    };
+  });
+}
+
+/** Add an RSS/Atom feed of the user's own. */
+export async function addSource(ctx: Ctx, input: { name: string; url: string; credibility?: number }, tenantId = "local") {
+  const url = new URL(input.url);
+  if (url.protocol !== "https:" && url.protocol !== "http:") throw new Error("Feed URL must start with http:// or https://");
+  const [row] = await ctx.db
+    .insert(sources)
+    .values({ tenantId, kind: "rss", name: input.name.trim().slice(0, 80), url: url.toString(), credibility: input.credibility ?? 50, config: { custom: true } })
+    .onConflictDoNothing()
+    .returning();
+  if (!row) throw new Error("That feed is already on the list");
+  return row;
+}
+
+export async function updateSource(ctx: Ctx, id: string, patch: { enabled?: boolean; credibility?: number }) {
+  const [row] = await ctx.db.update(sources).set(patch).where(eq(sources.id, id)).returning();
+  if (!row) throw new Error("Source not found");
+  return row;
+}
+
+/** Only sources the user added can be removed; their items go with them. */
+export async function removeSource(ctx: Ctx, id: string) {
+  const row = (await listSources(ctx)).find((s) => s.id === id);
+  if (!row) throw new Error("Source not found");
+  if (row.builtIn) throw new Error("Built-in sources can be switched off, not removed");
+  await ctx.db.delete(sources).where(eq(sources.id, id));
+  return { removed: true };
 }
 
 export async function listSwarms(ctx: Ctx) {

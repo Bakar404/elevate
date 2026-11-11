@@ -30,7 +30,9 @@ export function RepoChips({ repos, max = 3, className }: { repos: string[]; max?
 }
 
 export function FeedRow({ item }: { item: FeedItem }) {
-  const s = item.technique
+  const s = item.blocked
+    ? { label: /superseded/.test(item.blocked) ? "outdated" : "not for your setup", tone: "sand" as const }
+    : item.technique
     ? { label: item.legit === false ? "hype" : item.legit ? "legit" : "checking", tone: item.legit === false ? ("neutral" as const) : item.legit ? ("olive" as const) : ("sand" as const) }
     : (STATUS[item.status] ?? STATUS.new!);
   return (
@@ -49,12 +51,12 @@ export function FeedRow({ item }: { item: FeedItem }) {
           <span>{item.source}</span>
           {item.points != null && <span className="tabular-nums">{item.points} pts</span>}
           {item.stars != null && <span className="tabular-nums">★ {item.stars}</span>}
-          <span>{ago(item.createdAt)}</span>
+          <span title={item.publishedAt ? `published ${new Date(item.publishedAt).toLocaleDateString()}` : undefined}>{ago(item.publishedAt ?? item.createdAt)}</span>
           {item.technique && <span className="text-muted">→ {item.technique}</span>}
           <RepoChips repos={item.repos} />
         </div>
       </div>
-      <Badge tone={s.tone} className="shrink-0">
+      <Badge tone={s.tone} className="shrink-0" title={item.blocked ?? undefined}>
         {s.label}
       </Badge>
     </li>

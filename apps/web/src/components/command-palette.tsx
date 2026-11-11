@@ -1,11 +1,11 @@
 "use client";
 
 import { Command } from "cmdk";
-import { ArrowRight, FolderGit2, PanelLeft, Palette, Radar, RefreshCw, Satellite, SunMoon } from "lucide-react";
+import { ArrowRight, Bird, FolderGit2, PanelLeft, Palette, Radar, RefreshCw, Satellite, SunMoon } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 import { toast } from "sonner";
-import { SIDEBAR_EVENT } from "@/lib/prefs";
+import { SIDEBAR_EVENT, PIP_EVENT } from "@/lib/prefs";
 import { send } from "@/lib/utils";
 import { NAV } from "./sidebar";
 import { THEME_EVENT } from "./theme";
@@ -105,6 +105,15 @@ export function CommandPalette() {
             }}
           >
             <SunMoon /> Toggle light / dark theme
+          </Item>
+          <Item
+            value="Show hide Pip mascot companion"
+            onSelect={() => {
+              setOpen(false);
+              window.dispatchEvent(new Event(PIP_EVENT));
+            }}
+          >
+            <Bird /> Show / hide Pip
           </Item>
           <Item onSelect={() => go("/brand")}>
             <Palette /> Logo drafts

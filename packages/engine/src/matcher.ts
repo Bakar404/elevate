@@ -1,5 +1,7 @@
 import { cosine } from "@elevate/agent";
 import { and, emit, enqueue, eq, items, recommendations, repos, techniques } from "@elevate/db";
+import { ECOSYSTEM_LABEL } from "@elevate/sources";
+import { accessProfile, verdictFor } from "./access";
 import type { Ctx } from "./context";
 import { watchedProfiledRepos } from "./profiler";
 import { MATCH_SYSTEM, MatchSchema } from "./prompts";
@@ -15,6 +17,9 @@ export async function matchTechnique(ctx: Ctx, techniqueId: string, onlyRepoIds?
   const [tech] = await ctx.db.select().from(techniques).where(eq(techniques.id, techniqueId));
   if (!tech) throw new Error(`Technique ${techniqueId} not found`);
   if (!tech.legitimacy?.passed) return 0;
+  // Don't recommend what the user can't act on: a replaced model version, or a product they don't have.
+  const access = await accessProfile(ctx);
+  if (!verdictFor(tech, access).usable) return 0;
 
   const existing = new Set(
     (await ctx.db.select({ repoId: recommendations.repoId }).from(recommendations).where(eq(recommendations.techniqueId, techniqueId))).map(
@@ -43,6 +48,9 @@ export async function matchTechnique(ctx: Ctx, techniqueId: string, onlyRepoIds?
       `Applies to: ${tech.claims.appliesTo.join(", ")}`,
       `Claimed benefits: ${tech.claims.claimedBenefits.join(", ")}`,
       `Prerequisites: ${tech.claims.prerequisites.join(", ") || "none"}`,
+      ``,
+      `The user has: ${access.ecosystems.map((e) => ECOSYSTEM_LABEL[e]).join(", ") || "no AI products connected"}.`,
+      ...(access.available.length ? [`Models on their plan: ${access.available.map((m) => m.label).join(", ")}.`] : []),
       ``,
       `Repositories:`,
       ...candidates.map(

@@ -2,6 +2,8 @@ import { cosine, tool, type ToolSpec } from "@elevate/agent";
 import { and, desc, enqueue, eq, recommendations, repos, techniques } from "@elevate/db";
 import { readRepoFile, searchCode } from "@elevate/github";
 import { z } from "zod";
+import { ECOSYSTEM_LABEL } from "@elevate/sources";
+import { accessProfile, accessView } from "./access";
 import type { Ctx } from "./context";
 
 const clip = (s: string, n = 6000) => (s.length > n ? `${s.slice(0, n)}\n…(truncated)` : s);
@@ -59,12 +61,26 @@ export function chatTools(ctx: Ctx): ToolSpec[] {
       handler: async ({ repo, query }) => searchCode(await ctx.github(), (await repoByName(ctx, repo)).fullName, query),
     }),
     tool({
+      name: "list_access",
+      description: "The AI products and exact model versions this user has access to. Check before suggesting a model, an AI tool or a vendor-specific technique.",
+      parameters: z.object({}),
+      handler: async () => {
+        const a = await accessProfile(ctx);
+        return {
+          provider: a.provider,
+          has: a.ecosystems.map((e) => ECOSYSTEM_LABEL[e]),
+          models: a.listed ? a.available.map((m) => m.label) : "not listed by this provider; ask the user which models they use",
+        };
+      },
+    }),
+    tool({
       name: "search_radar",
       description: "Search techniques discovered from Hacker News, AI labs and papers, with their legitimacy verdicts.",
       parameters: z.object({ query: z.string(), limit: z.number().int().min(1).max(20).optional() }),
       handler: async ({ query, limit }) => {
         const [q] = await ctx.embedder.embed([query]);
         const rows = await ctx.db.select().from(techniques);
+        const access = await accessProfile(ctx);
         const ql = query.toLowerCase();
         return rows
           .map((t) => ({ t, s: (t.embedding ? cosine(q!, t.embedding) : 0) + (t.name.toLowerCase().includes(ql) ? 1 : 0) }))
@@ -76,6 +92,8 @@ export function chatTools(ctx: Ctx): ToolSpec[] {
             summary: t.summary,
             legitimacy: t.legitimacy ? { passed: t.legitimacy.passed, score: t.legitimacy.score, verdict: t.legitimacy.verdict } : "not checked yet",
             evidence: t.claims.evidenceLinks.slice(0, 3),
+            // Say so when the user can't act on it, so the answer doesn't recommend it.
+            usableByUser: accessView(t, access).reason ?? true,
           }));
       },
     }),

@@ -1,6 +1,6 @@
 "use client";
 
-import { KeyRound, Plug } from "lucide-react";
+import { KeyRound, Plug, SlidersHorizontal } from "lucide-react";
 import { useEffect, useState } from "react";
 import { toast } from "sonner";
 import { EXECUTORS, cn, send } from "@/lib/utils";
@@ -16,6 +16,12 @@ type Settings = {
   thresholds: { legitimacy: number; priorFloor: number; soundness: number };
   budget: { maxTasks: number; maxMinutes: number; maxAgentTurns: number };
   publishAsMe: boolean;
+  access: {
+    provider: string;
+    listed: boolean;
+    models: string[];
+    options: { id: string; label: string; on: boolean; detected: boolean; overridden: boolean }[];
+  };
 };
 
 const PROVIDERS = [
@@ -147,6 +153,62 @@ export function SettingsForm() {
           >
             Save model
           </Button>
+        </div>
+      </Card>
+
+      <Card className="scroll-mt-6 p-6" id="access" data-testid="access-card">
+        <div className="flex items-center gap-2">
+          <SlidersHorizontal className="size-4" />
+          <h2 className="font-medium">What you can use</h2>
+        </div>
+        <p className="mt-1 text-sm text-muted text-pretty">
+          elevate only raises news and recommendations you can act on. These follow your connection; switch on anything else you have, or switch off what you
+          don&apos;t want to hear about.
+        </p>
+        <div className="mt-4 grid gap-2 sm:grid-cols-2" role="group" aria-label="AI products you have">
+          {s.access.options.map((o) => (
+            <button
+              key={o.id}
+              type="button"
+              role="switch"
+              aria-checked={o.on}
+              data-testid={`access-${o.id}`}
+              onClick={() => void save({ access: { [o.id]: !o.on } }, o.on ? `${o.label}: news switched off` : `${o.label}: news switched on`)}
+              className={cn(
+                "flex items-center justify-between gap-3 rounded-xl border px-3 py-2.5 text-left transition-[border-color,background-color] duration-150",
+                o.on ? "border-sky/50 bg-sky/10" : "border-line hover:border-line-strong",
+              )}
+            >
+              <span className="min-w-0">
+                <span className="block text-sm font-medium">{o.label}</span>
+                <span className="mt-0.5 block text-xs text-muted">
+                  {o.overridden ? (o.on ? "Switched on by you" : "Switched off by you") : o.detected ? "From your connection" : "Not connected"}
+                </span>
+              </span>
+              <span
+                aria-hidden
+                className={cn("relative inline-flex h-5 w-9 shrink-0 items-center rounded-full border transition-colors", o.on ? "border-sky/60 bg-sky/30" : "border-line-strong bg-bg/60")}
+              >
+                <span className={cn("inline-block size-3.5 rounded-full bg-fg shadow transition-transform duration-200 motion-reduce:transition-none", o.on ? "translate-x-4" : "translate-x-0.5")} />
+              </span>
+            </button>
+          ))}
+        </div>
+        <div className="mt-3 flex flex-wrap items-center justify-between gap-2 text-xs text-faint">
+          <p className="min-w-0 text-pretty">
+            {s.access.listed
+              ? `Your plan lists ${s.access.models.length} model${s.access.models.length === 1 ? "" : "s"}: ${s.access.models.join(", ")}. News about models that aren't on it, or that have been replaced, is set aside.`
+              : "This provider doesn't list its models, so news about replaced model versions is set aside as newer ones appear in your sources."}
+          </p>
+          {s.access.options.some((o) => o.overridden) && (
+            <button
+              type="button"
+              className="shrink-0 underline decoration-line-strong underline-offset-4 hover:text-fg"
+              onClick={() => void save({ access: Object.fromEntries(s.access.options.map((o) => [o.id, null])) }, "Back to what your connection implies")}
+            >
+              Reset to detected
+            </button>
+          )}
         </div>
       </Card>
 

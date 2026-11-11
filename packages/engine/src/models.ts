@@ -16,7 +16,10 @@ export const DEMO_MODELS: ModelOption[] = [
 ];
 
 const CACHE_MS = 10 * 60_000;
+const ERROR_CACHE_MS = 60_000;
 let cache: { at: number; models: ModelOption[] } | undefined;
+/** A failed listing is remembered briefly so every page load doesn't restart the Copilot runtime. */
+let failed: { at: number; error: string } | undefined;
 
 /**
  * Models the user can pick. With Copilot as the provider this is the seat's live model list;
@@ -28,12 +31,16 @@ export async function availableModels(ctx: Ctx): Promise<{ provider: ModelConfig
   const { provider } = await resolveModelConfig(ctx.db);
   if (provider !== "copilot") return { provider, models: [] };
   if (cache && Date.now() - cache.at < CACHE_MS) return { provider, models: cache.models };
+  if (failed && Date.now() - failed.at < ERROR_CACHE_MS) return { provider, models: cache?.models ?? [], error: failed.error };
   try {
     const models = await listCopilotModels();
     cache = { at: Date.now(), models };
+    failed = undefined;
     return { provider, models };
   } catch (err) {
-    return { provider, models: [], error: err instanceof Error ? err.message : String(err) };
+    failed = { at: Date.now(), error: err instanceof Error ? err.message : String(err) };
+    // Keep showing the last good list rather than an empty picker.
+    return { provider, models: cache?.models ?? [], error: failed.error };
   }
 }
 

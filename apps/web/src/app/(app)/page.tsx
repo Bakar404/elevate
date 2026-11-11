@@ -1,10 +1,12 @@
-import { activityGraph, discoveryFeed, listRecommendations, radar, searchPlan, stats } from "@elevate/engine";
+import { accessProfile, activityGraph, discoveryFeed, listRecommendations, radar, searchPlan, stats } from "@elevate/engine";
 import { ArrowRight, Inbox, Radar as RadarIcon, ShieldCheck, Sparkles } from "lucide-react";
 import { cookies } from "next/headers";
 import Link from "next/link";
+import { AccessStrip } from "@/components/access-strip";
 import { ActivityGraph } from "@/components/activity-graph";
 import { DitherBackground } from "@/components/dither-background";
 import { FeedRow, RepoChips, SearchPlan } from "@/components/discovery";
+import { Pip } from "@/components/mascot";
 import { RecCard } from "@/components/rec";
 import { Reveal } from "@/components/scroll";
 import { Card, Empty, ScoreRing, ShimmerText, Stat } from "@/components/ui";
@@ -27,7 +29,7 @@ export default async function InboxPage({ searchParams }: { searchParams: Promis
   const { tab: raw } = await searchParams;
   const tab: TabKey = raw && raw in TABS ? (raw as TabKey) : "open";
   const ctx = await getCtx();
-  const [s, all, graph, jar, plan, focused, recent, techs] = await Promise.all([
+  const [s, all, graph, jar, plan, focused, recent, techs, access] = await Promise.all([
     stats(ctx),
     listRecommendations(ctx),
     activityGraph(ctx),
@@ -36,15 +38,21 @@ export default async function InboxPage({ searchParams }: { searchParams: Promis
     discoveryFeed(ctx, { limit: 8, repoOnly: true, hideHype: true }),
     discoveryFeed(ctx, { limit: 8, hideHype: true }),
     radar(ctx),
+    accessProfile(ctx),
   ]);
+  // A recommendation the user can no longer act on (its model was replaced, or the product isn't connected) isn't waiting on them.
+  const inTab = (r: (typeof all)[number], k: TabKey) =>
+    r.blocked && r.status === "open" ? k === "filtered" : (TABS[k].statuses as readonly string[]).includes(r.status);
+  const usable = techs.filter((t) => t.access.usable);
+  const setAside = techs.length - usable.length;
   const fresh = focused.length ? focused : recent;
   const legit = techs
-    .filter((t) => t.legitimacy?.passed)
+    .filter((t) => t.legitimacy?.passed && t.access.usable)
     .sort((a, b) => b.foundFor.length - a.foundFor.length || (b.legitimacy?.score ?? 0) - (a.legitimacy?.score ?? 0))
     .slice(0, 4);
   const logo = jar.get(LOGO_COOKIE)?.value;
-  const counts = Object.fromEntries(Object.entries(TABS).map(([k, t]) => [k, all.filter((r) => (t.statuses as readonly string[]).includes(r.status)).length])) as Record<TabKey, number>;
-  const rows = all.filter((r) => (TABS[tab].statuses as readonly string[]).includes(r.status));
+  const counts = Object.fromEntries((Object.keys(TABS) as TabKey[]).map((k) => [k, all.filter((r) => inTab(r, k)).length])) as Record<TabKey, number>;
+  const rows = all.filter((r) => inTab(r, tab));
   const verifying = all.filter((r) => r.status === "candidate").length;
 
   return (
@@ -76,10 +84,11 @@ export default async function InboxPage({ searchParams }: { searchParams: Promis
           <div className="mt-4 grid grid-cols-2 gap-6 rounded-2xl border border-line bg-bg/60 p-5 backdrop-blur-md sm:grid-cols-4">
             <Stat label="Ready" value={s.open} tone="olive" hint="awaiting your call" />
             <Stat label="Repos watched" value={s.repos} hint={`${s.allowedRepos} allow swarms`} />
-            <Stat label="Techniques" value={s.techniques} hint={`${s.legit} legit · ${s.hype} hype`} />
+            <Stat label="Techniques" value={s.techniques} hint={`${usable.filter((t) => t.legitimacy?.passed).length} legit · ${usable.filter((t) => t.legitimacy && !t.legitimacy.passed).length} hype${setAside ? ` · ${setAside} set aside` : ""}`} />
             <Stat label="Draft PRs" value={s.prs} tone="sky" hint={`${s.activeSwarms} swarm${s.activeSwarms === 1 ? "" : "s"} running`} />
           </div>
           <SearchPlan plan={plan} className="mt-4" />
+          <AccessStrip ecosystems={access.ecosystems} setAside={setAside} className="mt-1" />
         </div>
       </section>
 
@@ -108,7 +117,7 @@ export default async function InboxPage({ searchParams }: { searchParams: Promis
             ))}
           </div>
         ) : (
-          <Empty icon={<Inbox />} title={tab === "open" ? "Nothing waiting on you" : "Nothing here"}>
+          <Empty icon={tab === "open" ? <Pip mood="sleepy" size={56} className="size-14!" /> : <Inbox />} title={tab === "open" ? "Nothing waiting on you" : "Nothing here"}>
             {tab === "open"
               ? "New techniques are checked against your repos as they arrive. Only ones that pass both gates show up here."
               : "Recommendations move here as they progress."}

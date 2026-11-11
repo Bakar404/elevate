@@ -251,3 +251,47 @@ test.describe("on a phone", () => {
     await expect(page.getByTestId("threads-drawer")).toHaveCount(0);
   });
 });
+
+test("news the workspace can't use is set aside with the reason, and the filter narrows the list", async ({ page }) => {
+  await waitForOpenRecs(page);
+  await page.goto("/radar?show=setaside");
+  const cards = page.getByTestId("technique");
+  await expect(cards).toHaveCount(3);
+  await expect(page.getByTestId("access-reason").filter({ hasText: /GPT-5\.4 has been superseded/ })).toBeVisible();
+  await expect(page.getByTestId("access-reason").filter({ hasText: /Needs Codex/ })).toBeVisible();
+  await expect(page.getByTestId("access-strip")).toContainText("GitHub Copilot");
+  await page.goto("/");
+  await expect(page.getByText(/GPT-5\.4|Codex cloud/)).toHaveCount(0);
+});
+
+test("switching a product on in Settings releases what was held for it", async ({ page }) => {
+  await waitForOpenRecs(page);
+  await page.goto("/settings");
+  const codex = page.getByTestId("access-codex");
+  await expect(codex).toHaveAttribute("aria-checked", "false");
+  await codex.click();
+  await expect(codex).toHaveAttribute("aria-checked", "true");
+  await page.goto("/radar?show=setaside");
+  await expect(page.getByTestId("technique")).toHaveCount(2);
+  await page.goto("/settings");
+  await page.getByRole("button", { name: "Reset to detected" }).click();
+  await expect(page.getByTestId("access-codex")).toHaveAttribute("aria-checked", "false");
+});
+
+test("sources can be managed from the radar, and Pip reports what's waiting", async ({ page }) => {
+  await waitForOpenRecs(page);
+  await page.goto("/radar");
+  await page.getByTestId("manage-sources").click();
+  const list = page.getByTestId("source-list");
+  await expect(list.getByText("Hacker News")).toBeVisible();
+  await page.getByLabel("Feed name").fill("My feed");
+  await page.getByLabel("Feed URL").fill("https://example.com/feed.xml");
+  await page.getByRole("button", { name: "Add feed" }).click();
+  await expect(list.getByText("My feed")).toBeVisible();
+  await page.getByRole("button", { name: "Remove My feed" }).click();
+  await expect(list.getByText("My feed")).toHaveCount(0);
+  await page.keyboard.press("Escape");
+
+  await page.getByTestId("pip").getByRole("button").click();
+  await expect(page.getByTestId("pip-bubble")).toContainText(/ready for you/);
+});

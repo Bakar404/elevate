@@ -6,12 +6,14 @@ import { usePathname } from "next/navigation";
 import { cn } from "@/lib/utils";
 import type { LogoVariant } from "@/lib/prefs";
 import { LogoMark } from "./logo";
+import { Pip, pipMood } from "./mascot";
 import { isActive, NAV } from "./sidebar";
 import { ThemeToggle } from "./theme";
 import { Badge } from "./ui";
 
 /** Phone chrome: a slim top bar plus a thumb-reachable tab bar. Hidden from md up, where the sidebar takes over. */
-export function MobileTopBar({ demo, logo }: { demo: boolean; logo?: LogoVariant }) {
+export function MobileTopBar({ demo, logo, counts, pipHidden }: { demo: boolean; logo?: LogoVariant; counts?: { open: number; activeSwarms: number }; pipHidden?: boolean }) {
+  const mood = counts ? pipMood(counts) : "sleepy";
   return (
     <header
       data-testid="mobile-topbar"
@@ -27,6 +29,16 @@ export function MobileTopBar({ demo, logo }: { demo: boolean; logo?: LogoVariant
         </Badge>
       )}
       <div className="ml-auto flex items-center gap-1">
+        {counts && !pipHidden && (
+          <Link
+            href={mood === "working" ? "/swarms" : mood === "alert" ? "/#inbox" : "/radar"}
+            aria-label={mood === "working" ? "Pip: swarms are at work" : mood === "alert" ? `Pip: ${counts.open} ready for you` : "Pip: all quiet"}
+            className="grid size-10 place-items-center rounded-lg transition-colors hover:bg-ink/5"
+            data-testid="pip-mobile"
+          >
+            <Pip mood={mood} size={30} />
+          </Link>
+        )}
         <button
           type="button"
           onClick={() => window.dispatchEvent(new Event("elevate:palette"))}

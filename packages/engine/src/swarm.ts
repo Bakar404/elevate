@@ -138,6 +138,8 @@ export async function runSwarm(ctx: Ctx, swarmId: string, opts: { pollMs?: numbe
     await log(`Planning "${rec.title}" for ${repo.fullName}`);
     const p = await ctx.llm.json({
       task: "plan",
+      role: "swarm",
+      model: ctx.models?.swarm,
       system: PLAN_SYSTEM,
       schema: PlanSchema,
       prompt: [
@@ -173,7 +175,7 @@ export async function runSwarm(ctx: Ctx, swarmId: string, opts: { pollMs?: numbe
       audit: (action, target, details) => audit(ctx.db, `swarm:${swarmId}`, `github.${action}`, target, details, swarm.tenantId),
     });
 
-    const outcome = await getExecutor(swarm.executor).run({
+    const outcome = await getExecutor(swarm.executor, { model: ctx.models?.swarm }).run({
       swarmId,
       repo: { fullName: repo.fullName, defaultBranch: repo.defaultBranch },
       recommendation: { id: rec.id, title: rec.title, rationale: rec.hypothesis.rationale, expectedImpact: rec.hypothesis.expectedImpact },

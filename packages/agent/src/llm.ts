@@ -1,6 +1,8 @@
 import type { z } from "zod";
 import { createSession, modelConfigFromEnv, type ModelConfig } from "./copilot";
 import { responseSchema } from "./schema";
+import { DEFAULT_MODEL, resolveModel, type ModelRole } from "./models";
+import { defaultUsageRecorder, type UsageRecorder } from "./usage";
 
 export type JsonRequest<T> = {
   /** Stable task name; used for logging and by the fake LLM to pick a canned answer. */
@@ -9,6 +11,8 @@ export type JsonRequest<T> = {
   prompt: string;
   schema: z.ZodType<T>;
   timeoutMs?: number;
+  role?: ModelRole;
+  model?: string;
 };
 
 export interface LLM {
@@ -18,13 +22,32 @@ export interface LLM {
 
 export class CopilotLLM implements LLM {
   readonly name = "copilot";
-  constructor(private readonly config: ModelConfig = modelConfigFromEnv()) {}
+  constructor(
+    private readonly config: ModelConfig = modelConfigFromEnv(),
+    private readonly usage: UsageRecorder = defaultUsageRecorder,
+  ) {}
 
   async json<T>(req: JsonRequest<T>): Promise<T> {
-    const session = await createSession({ config: this.config, system: req.system });
+    const model = req.model?.trim() || (req.role ? resolveModel(req.role) : undefined) || this.config.model;
+    const session = await createSession({ config: { ...this.config, model }, system: req.system });
+    let sawUsage = false;
+    let unsubscribe: (() => void) | undefined;
     try {
+      if (typeof session.on === "function") {
+        unsubscribe = session.on("assistant.usage", (event) => {
+          sawUsage = true;
+          this.usage.record({
+            role: req.role,
+            model: event.data.model || model || DEFAULT_MODEL,
+            inputTokens: event.data.inputTokens,
+            outputTokens: event.data.outputTokens,
+          });
+        });
+      }
       return (await session.sendAndWait(req.prompt as never, responseSchema(req.schema) as never, req.timeoutMs ?? 180_000)) as T;
     } finally {
+      unsubscribe?.();
+      if (!sawUsage) this.usage.record({ role: req.role, model: model || DEFAULT_MODEL });
       await session.disconnect().catch(() => {});
     }
   }

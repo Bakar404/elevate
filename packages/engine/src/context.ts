@@ -1,4 +1,4 @@
-import { CopilotLLM, defaultEmbedder, modelConfigFromEnv, type Embedder, type JsonRequest, type LLM, type ModelConfig } from "@elevate/agent";
+import { CopilotLLM, defaultEmbedder, modelConfigFromEnv, type Embedder, type JsonRequest, type LLM, type ModelConfig, type ModelRole } from "@elevate/agent";
 import { getDb, getSecret, getSetting, type DB } from "@elevate/db";
 import { FakeGitHub, octokitWriter, type GitHubWriter } from "@elevate/executors";
 import { getOctokit, resolveGitHubToken, type Octokit } from "@elevate/github";
@@ -8,6 +8,8 @@ import { demoLLM } from "./fake";
 export type Ctx = {
   db: DB;
   llm: LLM;
+  /** Explicit per-role model overrides; omitted roles use the configured defaults. */
+  models?: Partial<Record<ModelRole, string>>;
   embedder: Embedder;
   github: () => Promise<Octokit>;
   /** Raw GitHub writer handed to `guardedGitHub`; never given to executors directly. */

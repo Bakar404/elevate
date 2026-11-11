@@ -115,6 +115,8 @@ export async function legitimacyGate(ctx: Ctx, techniqueId: string): Promise<Gat
 
   const review = await consistentReview(ctx.llm, {
     task: "legitimacy",
+    role: "gate1",
+    model: ctx.models?.gate1,
     system: LEGITIMACY_SYSTEM,
     schema: LegitimacySchema,
     prompt: [
@@ -177,6 +179,8 @@ export async function soundnessGate(ctx: Ctx, recommendationId: string): Promise
 
   const review = await consistentReview(ctx.llm, {
     task: "soundness",
+    role: "gate2",
+    model: ctx.models?.gate2,
     system: SOUNDNESS_SYSTEM,
     schema: SoundnessSchema,
     prompt: [

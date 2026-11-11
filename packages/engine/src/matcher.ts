@@ -35,6 +35,8 @@ export async function matchTechnique(ctx: Ctx, techniqueId: string, onlyRepoIds?
 
   const result = await ctx.llm.json({
     task: "match",
+    role: "matcher",
+    model: ctx.models?.matcher,
     system: MATCH_SYSTEM,
     schema: MatchSchema,
     prompt: [

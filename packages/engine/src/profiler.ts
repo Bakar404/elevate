@@ -76,7 +76,7 @@ export async function profileRepo(ctx: Ctx, repoId: string) {
     `--- README ---\n${context.readme || "(none)"}`,
   ].join("\n\n");
 
-  const profile = await ctx.llm.json({ task: "profile", system: PROFILE_SYSTEM, prompt, schema: RepoProfileSchema });
+  const profile = await ctx.llm.json({ task: "profile", role: "matcher", model: ctx.models?.matcher, system: PROFILE_SYSTEM, prompt, schema: RepoProfileSchema });
   const profileText = profileToText(repo.fullName, profile, repo.description);
   const [embedding] = await ctx.embedder.embed([profileText]);
 

@@ -16,7 +16,7 @@ const str = (p: Record<string, unknown>, k: string) => {
 };
 
 export const HANDLERS: Record<string, Handler> = {
-  "repos.sync": (ctx, _p, job) => syncRepos(ctx, job.tenantId),
+  "repos.sync": (ctx, p, job) => syncRepos(ctx, job.tenantId, { scheduled: p.scheduled === true }),
   "repo.profile": (ctx, p) => profileRepo(ctx, str(p, "repoId")),
   "repo.match": (ctx, p) => matchRepo(ctx, str(p, "repoId")),
   "sources.sweep": async (ctx, _p, job) => {
@@ -54,7 +54,8 @@ export async function runJob(ctx: Ctx, job: ClaimedJob) {
 const minutes = (env: string | undefined, fallback: number) => Number(env ?? fallback) * 60_000;
 const SCHEDULE = [
   { job: "sources.sweep", every: minutes(process.env.ELEVATE_SWEEP_MINUTES, 60), needsGitHub: false },
-  { job: "repos.sync", every: minutes(process.env.ELEVATE_SYNC_MINUTES, 360), needsGitHub: true },
+  // Cheap: one list call, plus a branch lookup only for repos that were pushed to.
+  { job: "repos.sync", every: minutes(process.env.ELEVATE_SYNC_MINUTES, 5), needsGitHub: true },
 ];
 
 /** Enqueue recurring jobs that are due. Cheap to call often; state lives in settings so restarts don't re-run everything. */
@@ -66,7 +67,7 @@ export async function scheduleTick(ctx: Ctx, now = Date.now()) {
     if (now - last < s.every) continue;
     if (s.needsGitHub && !(await resolveGitHubToken(ctx.db).then(() => true, () => false))) continue;
     await setSetting(ctx.db, `scheduler.${s.job}`, now);
-    await enqueue(ctx.db, s.job, {}, { dedupeKey: s.job });
+    await enqueue(ctx.db, s.job, { scheduled: true }, { dedupeKey: s.job });
     due.push(s.job);
   }
   return due;

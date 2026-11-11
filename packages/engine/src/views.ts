@@ -105,6 +105,7 @@ export async function listRepos(ctx: Ctx) {
       allowSwarm: r.allowSwarm,
       profile: r.profile,
       profiledAt: r.profiledAt,
+      profiledSha: r.profiledSha,
       open: n("open"),
       prs: n("pr_opened"),
     };

@@ -86,7 +86,22 @@ export default async function ReposPage({ searchParams }: { searchParams: Promis
                 )}
                 <div className="mt-3 flex gap-4 text-xs text-faint">
                   <span>pushed {ago(r.pushedAt)}</span>
-                  <span>profiled {ago(r.profiledAt)}</span>
+                  <span>
+                    profiled {ago(r.profiledAt)}
+                    {r.profiledSha && (
+                      <>
+                        {" at "}
+                        <a
+                          href={`https://github.com/${r.fullName}/commit/${r.profiledSha}`}
+                          target="_blank"
+                          rel="noreferrer"
+                          className="font-mono hover:text-ink hover:underline"
+                        >
+                          {r.profiledSha.slice(0, 7)}
+                        </a>
+                      </>
+                    )}
+                  </span>
                   {r.open > 0 && (
                     <Link href="/" className="text-olive hover:underline">
                       {r.open} ready

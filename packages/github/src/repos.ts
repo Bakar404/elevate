@@ -42,6 +42,16 @@ export async function listUserRepos(gh: Octokit): Promise<GitHubRepo[]> {
   }));
 }
 
+/** Commit SHA at the tip of a branch, or undefined for an empty repo / missing branch. */
+export async function branchHead(gh: Octokit, fullName: string, branch: string): Promise<string | undefined> {
+  const [owner, repo] = fullName.split("/") as [string, string];
+  try {
+    return (await gh.repos.getBranch({ owner, repo, branch })).data.commit.sha;
+  } catch {
+    return undefined;
+  }
+}
+
 const MANIFESTS = [
   "package.json",
   "pyproject.toml",

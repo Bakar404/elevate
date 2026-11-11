@@ -94,6 +94,9 @@ export const repos = pgTable(
     profileText: text("profile_text"),
     embedding: vector("embedding", { dimensions: EMBEDDING_DIM }),
     profiledAt: timestamp("profiled_at", { withTimezone: true }),
+    /** Default-branch head at the last sync, and the commit the current profile was built from. */
+    headSha: text("head_sha"),
+    profiledSha: text("profiled_sha"),
     createdAt: createdAt(),
     updatedAt: updatedAt(),
   },

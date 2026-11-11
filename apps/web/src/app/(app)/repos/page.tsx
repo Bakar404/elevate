@@ -27,8 +27,8 @@ export default async function ReposPage({ searchParams }: { searchParams: Promis
   const counts = Object.fromEntries(Object.entries(FILTERS).map(([k, fn]) => [k, matched.filter(fn).length]));
   const rows = matched.filter(FILTERS[f] ?? FILTERS.all!);
   return (
-    <div className="mx-auto max-w-5xl px-8 pb-16 pt-10">
-      <div className="flex items-end justify-between gap-4">
+    <div className="mx-auto max-w-5xl px-4 sm:px-8 pb-16 pt-10">
+      <div className="flex flex-wrap items-end justify-between gap-4">
         <div>
           <h1 className="text-2xl font-semibold tracking-tight">Repos</h1>
           <p className="mt-1 text-sm text-muted">Each repo is profiled (stack, modules, tests) so new techniques can be matched to it. Swarms only write where you allow them.</p>
@@ -57,8 +57,8 @@ export default async function ReposPage({ searchParams }: { searchParams: Promis
         )}
         {rows.map((r) => (
           <SpotlightCard key={r.id} className="cv-auto p-5" data-testid="repo">
-            <div className="flex flex-wrap items-start gap-4">
-              <div className="min-w-0 flex-1">
+            <div className="flex flex-wrap items-start gap-x-4 gap-y-3">
+              <div className="min-w-0 flex-1 basis-64">
                 <div className="flex flex-wrap items-center gap-2">
                   <a href={r.htmlUrl} target="_blank" rel="noreferrer" className="font-mono text-sm font-medium hover:text-sky">
                     {r.fullName}
@@ -84,7 +84,7 @@ export default async function ReposPage({ searchParams }: { searchParams: Promis
                     ))}
                   </div>
                 )}
-                <div className="mt-3 flex gap-4 text-xs text-faint">
+                <div className="mt-3 flex flex-wrap gap-x-4 gap-y-1 text-xs text-faint">
                   <span>pushed {ago(r.pushedAt)}</span>
                   <span>
                     profiled {ago(r.profiledAt)}

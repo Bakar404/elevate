@@ -99,3 +99,22 @@ export async function openDraftPullRequest(
   const res = await gh.pulls.create({ ...split(fullName), ...opts, draft: true });
   return { url: res.data.html_url, number: res.data.number };
 }
+
+/**
+ * Squash a pull request's changes into one commit on a new branch. The commit has the PR's
+ * final tree and the merge base as its only parent, so its diff is exactly the PR's diff.
+ * Author and committer default to the token's user, which is how the PR becomes yours.
+ */
+export async function squashPullRequest(gh: Octokit, fullName: string, pr: number, opts: { branch: string; message: string }) {
+  const r = split(fullName);
+  const { data: p } = await gh.pulls.get({ ...r, pull_number: pr });
+  const { data: cmp } = await gh.repos.compareCommitsWithBasehead({ ...r, basehead: `${p.base.sha}...${p.head.sha}` });
+  const { data: head } = await gh.git.getCommit({ ...r, commit_sha: p.head.sha });
+  const { data: commit } = await gh.git.createCommit({ ...r, message: opts.message, tree: head.tree.sha, parents: [cmp.merge_base_commit.sha] });
+  await gh.git.createRef({ ...r, ref: `refs/heads/${opts.branch}`, sha: commit.sha });
+  return { sha: commit.sha, body: p.body ?? "" };
+}
+
+export async function closePullRequest(gh: Octokit, fullName: string, pr: number) {
+  await gh.pulls.update({ ...split(fullName), pull_number: pr, state: "closed" });
+}

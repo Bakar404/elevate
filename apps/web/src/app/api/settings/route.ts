@@ -1,5 +1,5 @@
 import { deleteSecret, getSecret, getSetting, setSecret, setSetting, audit } from "@elevate/db";
-import { DEFAULT_BUDGET, modelPrefs, resetGitHubClient, resolveModelConfig, setModelPrefs, swarmBudget, thresholds } from "@elevate/engine";
+import { DEFAULT_BUDGET, modelPrefs, publishAsMe, resetGitHubClient, resolveModelConfig, setModelPrefs, swarmBudget, thresholds } from "@elevate/engine";
 import { resolveGitHubToken } from "@elevate/github";
 import { z } from "zod";
 import { body, route } from "@/lib/api";
@@ -29,6 +29,7 @@ export const GET = route(async (ctx) => {
     executor: await getSetting(ctx.db, "executor.default", ctx.demo ? "fake" : "copilot-cloud"),
     thresholds: await thresholds(ctx),
     budget: await swarmBudget(ctx),
+    publishAsMe: await publishAsMe(ctx),
     defaults: { budget: DEFAULT_BUDGET },
   };
 });
@@ -41,6 +42,7 @@ const Put = z.object({
   executor: z.enum(["copilot-cloud", "claude-action", "codex-cloud", "local", "fake"]).optional(),
   thresholds: z.object({ legitimacy: z.number().int().min(0).max(100), priorFloor: z.number().int().min(0).max(100), soundness: z.number().int().min(0).max(100) }).partial().optional(),
   budget: z.object({ maxTasks: z.number().int().min(1).max(20), maxMinutes: z.number().int().min(5).max(600), maxAgentTurns: z.number().int().min(1).max(200) }).partial().optional(),
+  publishAsMe: z.boolean().optional(),
 });
 
 export const PUT = route(async (ctx, req) => {
@@ -54,6 +56,7 @@ export const PUT = route(async (ctx, req) => {
   }
   if (p.executor) await setSetting(ctx.db, "executor.default", p.executor);
   if (p.thresholds) await setSetting(ctx.db, "gates.thresholds", { ...(await getSetting(ctx.db, "gates.thresholds", {})), ...p.thresholds });
+  if (p.publishAsMe !== undefined) await setSetting(ctx.db, "swarm.publishAsMe", p.publishAsMe);
   if (p.budget) await setSetting(ctx.db, "swarm.budget", { ...(await getSetting(ctx.db, "swarm.budget", {})), ...p.budget });
   const changed = Object.keys(p).map((k) => (k === "apiKey" || k === "githubToken" ? `${k}:${p[k as "apiKey"] ? "set" : "cleared"}` : k));
   await audit(ctx.db, "user", "settings.update", "settings", { changed });

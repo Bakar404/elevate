@@ -14,7 +14,7 @@ import {
   type SwarmBudget,
   type TaskStatus,
 } from "@elevate/db";
-import { getExecutor, guardedGitHub, type PlannedTask, type SwarmPlan } from "@elevate/executors";
+import { getExecutor, guardedGitHub, type PlannedTask, type SwarmLinks, type SwarmPlan } from "@elevate/executors";
 import type { Status } from "@elevate/policy";
 import type { Ctx } from "./context";
 import { slugify } from "./ingest";
@@ -122,44 +122,70 @@ export function planToTasks(plan: { subtasks: { key: string; title: string; inst
   ];
 }
 
-/** Run an approved recommendation's swarm: start (T2), plan, execute through the guard, and record the outcome. */
-export async function runSwarm(ctx: Ctx, swarmId: string, opts: { pollMs?: number } = {}) {
+/** "Publish swarm PRs as me": on by default; ELEVATE_PUBLISH_AS_ME=0 changes the default. */
+export async function publishAsMe(ctx: Ctx): Promise<boolean> {
+  return getSetting<boolean>(ctx.db, "swarm.publishAsMe", process.env.ELEVATE_PUBLISH_AS_ME !== "0");
+}
+
+/**
+ * Run an approved recommendation's swarm: start (T2), plan, execute through the guard, and record the outcome.
+ * With `resume`, pick up a swarm that was already running when its worker stopped: follow its
+ * existing issue and PR without planning, opening or assigning anything again.
+ */
+export async function runSwarm(ctx: Ctx, swarmId: string, opts: { pollMs?: number; resume?: boolean } = {}) {
   const [swarm] = await ctx.db.select().from(swarms).where(eq(swarms.id, swarmId));
-  if (!swarm || swarm.status !== "queued") return;
+  if (!swarm || controllers.has(swarmId)) return;
+  const resuming = opts.resume === true && swarm.status === "running" && Boolean(swarm.issueUrl);
+  if (swarm.status !== "queued" && !resuming) return;
   const { rec, repo } = await load(ctx, swarm.recommendationId);
   const log = (message: string, level: "info" | "success" | "warn" | "error" = "info") =>
     emit(ctx.db, { kind: "swarm.log", swarmId, level, message, tenantId: swarm.tenantId });
 
-  await applyEvent(ctx.db, rec.id, "start", {}, `swarm:${swarmId}`);
-  await ctx.db.update(swarms).set({ status: "planning", startedAt: new Date() }).where(eq(swarms.id, swarmId));
+  if (!resuming) {
+    await applyEvent(ctx.db, rec.id, "start", {}, `swarm:${swarmId}`);
+    await ctx.db.update(swarms).set({ status: "planning", startedAt: new Date() }).where(eq(swarms.id, swarmId));
+  }
   const controller = new AbortController();
   controllers.set(swarmId, controller);
 
   try {
     const prefs = await modelPrefs(ctx);
     const planner = ctx.demo ? "demo" : await modelLabel(ctx);
-    await log(`Planning "${rec.title}" for ${repo.fullName} with ${planner}`);
-    const p = await ctx.llm.json({
-      task: "plan",
-      system: PLAN_SYSTEM,
-      schema: PlanSchema,
-      prompt: [
-        `Repository: ${repo.fullName}`,
-        `Profile:\n${repo.profileText ?? ""}`,
-        `Recommendation: ${rec.title}`,
-        `Change: ${rec.hypothesis.change}`,
-        `Rationale: ${rec.hypothesis.rationale}`,
-        `Expected impact: ${rec.hypothesis.expectedImpact}`,
-        `How to measure: ${rec.gate2?.evidence.find((e) => e.label === "How to measure")?.detail ?? "n/a"}`,
-        `Touchpoints: ${rec.hypothesis.touchpoints.join(", ")}`,
-        `Budget: at most ${swarm.budget.maxTasks} agent tasks`,
-      ].join("\n\n"),
-    });
-    const plan: SwarmPlan = { summary: p.summary, acceptanceCriteria: p.acceptanceCriteria, verification: p.verification, tasks: planToTasks(p) };
-    await ctx.db.insert(swarmTasks).values(plan.tasks.map((t) => ({ swarmId, ...t, status: (t.role === "planner" ? "done" : "pending") as TaskStatus })));
-    const branch = `elevate/${slugify(rec.title).slice(0, 40)}-${swarmId.slice(0, 6)}`;
-    await ctx.db.update(swarms).set({ status: "running", branch }).where(eq(swarms.id, swarmId));
-    await log(`Plan ready: ${plan.tasks.length} tasks on ${branch}`);
+    let plan: SwarmPlan;
+    let branch: string;
+    if (resuming) {
+      const rows = await ctx.db.select().from(swarmTasks).where(eq(swarmTasks.swarmId, swarmId));
+      plan = {
+        summary: "",
+        acceptanceCriteria: [],
+        verification: "",
+        tasks: rows.map((t) => ({ key: t.key, role: t.role, title: t.title, instructions: t.instructions, dependsOn: t.dependsOn })),
+      };
+      branch = swarm.branch ?? `elevate/${slugify(rec.title).slice(0, 40)}-${swarmId.slice(0, 6)}`;
+    } else {
+      await log(`Planning "${rec.title}" for ${repo.fullName} with ${planner}`);
+      const p = await ctx.llm.json({
+        task: "plan",
+        system: PLAN_SYSTEM,
+        schema: PlanSchema,
+        prompt: [
+          `Repository: ${repo.fullName}`,
+          `Profile:\n${repo.profileText ?? ""}`,
+          `Recommendation: ${rec.title}`,
+          `Change: ${rec.hypothesis.change}`,
+          `Rationale: ${rec.hypothesis.rationale}`,
+          `Expected impact: ${rec.hypothesis.expectedImpact}`,
+          `How to measure: ${rec.gate2?.evidence.find((e) => e.label === "How to measure")?.detail ?? "n/a"}`,
+          `Touchpoints: ${rec.hypothesis.touchpoints.join(", ")}`,
+          `Budget: at most ${swarm.budget.maxTasks} agent tasks`,
+        ].join("\n\n"),
+      });
+      plan = { summary: p.summary, acceptanceCriteria: p.acceptanceCriteria, verification: p.verification, tasks: planToTasks(p) };
+      await ctx.db.insert(swarmTasks).values(plan.tasks.map((t) => ({ swarmId, ...t, status: (t.role === "planner" ? "done" : "pending") as TaskStatus })));
+      branch = `elevate/${slugify(rec.title).slice(0, 40)}-${swarmId.slice(0, 6)}`;
+      await ctx.db.update(swarms).set({ status: "running", branch }).where(eq(swarms.id, swarmId));
+      await log(`Plan ready: ${plan.tasks.length} tasks on ${branch}`);
+    }
 
     const github = guardedGitHub(await ctx.writer(), {
       repoFullName: repo.fullName,
@@ -176,7 +202,11 @@ export async function runSwarm(ctx: Ctx, swarmId: string, opts: { pollMs?: numbe
       audit: (action, target, details) => audit(ctx.db, `swarm:${swarmId}`, `github.${action}`, target, details, swarm.tenantId),
     });
 
-    const outcome = await getExecutor(swarm.executor, { codingAgentModel: prefs.codingAgent }).run({
+    // A resumed swarm gets what is left of its time budget, with a floor so a long outage doesn't end it at once.
+    const elapsed = swarm.startedAt ? Math.floor((Date.now() - swarm.startedAt.getTime()) / 60_000) : 0;
+    const budgetMinutes = resuming ? Math.max(15, swarm.budget.maxMinutes - elapsed) : swarm.budget.maxMinutes;
+    const executor = getExecutor(swarm.executor, { codingAgentModel: prefs.codingAgent, publishAsUser: await publishAsMe(ctx) });
+    const run = {
       swarmId,
       repo: { fullName: repo.fullName, defaultBranch: repo.defaultBranch },
       recommendation: { id: rec.id, title: rec.title, rationale: rec.hypothesis.rationale, expectedImpact: rec.hypothesis.expectedImpact },
@@ -185,7 +215,7 @@ export async function runSwarm(ctx: Ctx, swarmId: string, opts: { pollMs?: numbe
       github,
       token: ctx.token,
       log,
-      setTask: async (key, status, output) => {
+      setTask: async (key: string, status: TaskStatus, output?: string) => {
         await ctx.db
           .update(swarmTasks)
           .set({
@@ -197,27 +227,47 @@ export async function runSwarm(ctx: Ctx, swarmId: string, opts: { pollMs?: numbe
           .where(and(eq(swarmTasks.swarmId, swarmId), eq(swarmTasks.key, key)));
         await emit(ctx.db, { kind: "swarm.task", swarmId, message: `${key}: ${status}`, data: { key, status }, tenantId: swarm.tenantId });
       },
+      onLinked: async (l: SwarmLinks) => {
+        await ctx.db.update(swarms).set({ issueUrl: l.issueUrl, prUrl: l.prUrl ?? null }).where(eq(swarms.id, swarmId));
+      },
       signal: controller.signal,
-      budgetMinutes: swarm.budget.maxMinutes,
+      budgetMinutes,
       pollMs: opts.pollMs,
-    });
+    };
+
+    let outcome;
+    if (resuming) {
+      if (!executor.resume) throw new Error(`${executor.label} can't pick up a swarm after a restart`);
+      outcome = await executor.resume(run, { issueUrl: swarm.issueUrl!, prUrl: swarm.prUrl ?? undefined });
+    } else {
+      outcome = await executor.run(run);
+    }
 
     if (!outcome.prUrl) throw new Error("The swarm finished without a pull request");
     await ctx.db
       .update(swarmTasks)
       .set({ status: "done", finishedAt: new Date() })
       .where(and(eq(swarmTasks.swarmId, swarmId), inArray(swarmTasks.status, ["pending", "running"])));
+    const prior = (swarm.result ?? {}) as { models?: Record<string, string> };
     await ctx.db
       .update(swarms)
       .set({
         status: "succeeded",
         prUrl: outcome.prUrl,
-        issueUrl: outcome.issueUrl ?? null,
-        result: { summary: outcome.summary, usage: github.usage(), models: { planner, ...outcome.models } },
+        issueUrl: outcome.issueUrl ?? swarm.issueUrl ?? null,
+        result: {
+          ...prior,
+          summary: outcome.summary,
+          usage: github.usage(),
+          models: { planner, ...outcome.models, ...(resuming ? prior.models : {}) },
+          ...(resuming ? { resumed: true } : {}),
+        },
         finishedAt: new Date(),
       })
       .where(eq(swarms.id, swarmId));
-    await applyEvent(ctx.db, rec.id, "pr", {}, `swarm:${swarmId}`);
+    // A swarm recorded as done too early may already have moved its recommendation on.
+    const [now] = await ctx.db.select({ status: recommendations.status }).from(recommendations).where(eq(recommendations.id, rec.id));
+    if (now?.status === "in_progress") await applyEvent(ctx.db, rec.id, "pr", {}, `swarm:${swarmId}`);
     await log(`Draft PR ready: ${outcome.prUrl}`, "success");
     return outcome;
   } catch (err) {
@@ -237,4 +287,30 @@ export async function runSwarm(ctx: Ctx, swarmId: string, opts: { pollMs?: numbe
   } finally {
     controllers.delete(swarmId);
   }
+}
+
+/**
+ * On worker start: swarms left running by a stopped worker. Those with an issue are followed
+ * again; those that stopped before opening anything are marked failed so they can be retried.
+ * Returns how many were queued to resume. Assumes one worker process runs swarms.
+ */
+export async function resumeSwarms(ctx: Ctx): Promise<number> {
+  const stuck = await ctx.db.select().from(swarms).where(inArray(swarms.status, ["planning", "running"]));
+  const boot = Date.now();
+  let resumed = 0;
+  for (const s of stuck) {
+    if (controllers.has(s.id)) continue;
+    if (s.status === "running" && s.issueUrl && getExecutor(s.executor).resume) {
+      await enqueue(ctx.db, "swarm.run", { swarmId: s.id, resume: true }, { dedupeKey: `swarm.resume:${s.id}:${boot}`, maxAttempts: 1 });
+      resumed++;
+      continue;
+    }
+    const message = "The worker stopped before this swarm opened anything on GitHub. Retry it.";
+    await ctx.db.update(swarms).set({ status: "failed", error: message, finishedAt: new Date() }).where(eq(swarms.id, s.id));
+    await ctx.db.update(swarmTasks).set({ status: "skipped" }).where(and(eq(swarmTasks.swarmId, s.id), inArray(swarmTasks.status, ["pending", "running"])));
+    const [r] = await ctx.db.select({ status: recommendations.status }).from(recommendations).where(eq(recommendations.id, s.recommendationId));
+    if (r?.status === "in_progress") await applyEvent(ctx.db, s.recommendationId, "fail", {}, `swarm:${s.id}`);
+    await emit(ctx.db, { kind: "swarm.log", swarmId: s.id, level: "error", message, tenantId: s.tenantId });
+  }
+  return resumed;
 }

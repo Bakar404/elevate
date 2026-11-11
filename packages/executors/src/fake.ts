@@ -37,6 +37,19 @@ export class FakeGitHub implements GitHubWriter {
   async linkedPrs(_fullName: string, issue: number) {
     return this.prs.get(issue) ?? [];
   }
+  /** Make squashPr fail, as if the branch already existed. */
+  failSquash = false;
+  async squashPr(fullName: string, pr: number, o: { branch: string; message: string }) {
+    if (this.failSquash) throw new Error(`Reference refs/heads/${o.branch} already exists`);
+    this.writes.push({ op: "squashPr", fullName, detail: { pr, ...o } });
+    return {
+      sha: `sha${++this.n}`,
+      body: "Adds the change.\n\n<!-- START COPILOT CODING AGENT TIPS -->\n---\nTips for Copilot",
+    };
+  }
+  async closePr(fullName: string, pr: number) {
+    this.writes.push({ op: "closePr", fullName, detail: { pr } });
+  }
 }
 
 /** Walks the task DAG without calling any model, then publishes through the guard like a real executor. */

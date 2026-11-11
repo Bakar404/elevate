@@ -1,4 +1,5 @@
-import { issueBody, type Executor, type SwarmOutcome, type SwarmRun } from "./types";
+import { WriteRefused } from "@elevate/policy";
+import { issueBody, type Executor, type SwarmLinks, type SwarmOutcome, type SwarmRun } from "./types";
 
 const sleep = (ms: number, signal?: AbortSignal) =>
   new Promise<void>((resolve, reject) => {
@@ -26,19 +27,74 @@ async function waitForPr(run: SwarmRun, issue: number, label: string): Promise<s
   }
 }
 
+const numberFromUrl = (url: string) => Number(url.split("/").pop());
+
+/** Copilot's PR body ends with tips for Copilot users; they don't belong in a PR under your name. */
+export function cleanAgentBody(body: string): string {
+  const cut = body.search(/<!--\s*START COPILOT/i);
+  return (cut >= 0 ? body.slice(0, cut) : body)
+    .replace(/<!--[\s\S]*?-->/g, "")
+    .replace(/\n-{3,}\s*$/, "")
+    .trim();
+}
+
+/**
+ * Republish the agent's finished PR under the token's account: one squashed commit on the
+ * swarm branch, a draft PR from that branch, and the agent's PR closed with a pointer.
+ * If republishing fails, the agent's PR is kept and returned.
+ */
+async function publishAsUser(run: SwarmRun, agentPr: string, issue: number): Promise<string> {
+  const { github, repo } = run;
+  const pr = numberFromUrl(agentPr);
+  let mine: { url: string; number: number };
+  try {
+    const message = [run.recommendation.title, run.plan.summary, `Refs #${issue}`].filter(Boolean).join("\n\n");
+    const { body } = await github.squashPr(repo.fullName, pr, { branch: run.branch, message });
+    mine = await github.openDraftPr(repo.fullName, {
+      head: run.branch,
+      base: repo.defaultBranch,
+      title: run.recommendation.title,
+      body: [cleanAgentBody(body), `Closes #${issue}`].filter(Boolean).join("\n\n"),
+    });
+  } catch (err) {
+    if (err instanceof WriteRefused) throw err;
+    const why = err instanceof Error ? err.message : String(err);
+    await run.log(`Couldn't republish ${agentPr} under your account (${why}); kept Copilot's pull request`, "warn");
+    return agentPr;
+  }
+  await run.log(`Republished as ${mine.url} under your account, squashed into one commit on ${run.branch}`);
+  try {
+    await github.comment(repo.fullName, pr, `Republished as #${mine.number}. Closing this one.`);
+    await github.closePr(repo.fullName, pr);
+    await run.log(`Closed ${agentPr}`);
+  } catch (err) {
+    if (err instanceof WriteRefused) throw err;
+    const why = err instanceof Error ? err.message : String(err);
+    await run.log(`Opened ${mine.url} but couldn't close ${agentPr} (${why})`, "warn");
+  }
+  return mine.url;
+}
+
 /** Copilot coding agent: create an issue with the plan and assign it to Copilot, which opens a draft PR. */
 export class CopilotCloudExecutor implements Executor {
   readonly kind = "copilot-cloud" as const;
   readonly label = "GitHub Copilot coding agent";
-  /** model: the coding agent's model id; omitted means GitHub's auto selection. */
-  constructor(private readonly opts: { model?: string } = {}) {}
+  /**
+   * model: the coding agent's model id; omitted means GitHub's auto selection.
+   * publishAsUser: republish the finished PR under the token's account and close Copilot's.
+   */
+  constructor(private readonly opts: { model?: string; publishAsUser?: boolean } = {}) {}
+
+  private get codingAgent() {
+    return this.opts.model || "auto (GitHub picks the model)";
+  }
 
   async run(run: SwarmRun): Promise<SwarmOutcome> {
     const { github, repo } = run;
     const model = this.opts.model || undefined;
-    const codingAgent = model ?? "auto (GitHub picks the model)";
     const issue = await github.createIssue(repo.fullName, run.recommendation.title, issueBody(run), ["elevate"]);
     await run.log(`Opened ${issue.url}`);
+    await run.onLinked?.({ issueUrl: issue.url });
     for (const t of run.plan.tasks) await run.setTask(t.key, "running");
     await github.assignAgent(repo.fullName, issue.number, {
       baseBranch: repo.defaultBranch,
@@ -46,17 +102,32 @@ export class CopilotCloudExecutor implements Executor {
       ...(model ? { model } : {}),
     });
     github.turn();
-    await run.log(`Assigned to the Copilot coding agent (model: ${codingAgent}); waiting for its pull request`);
-    const prUrl = await waitForPr(run, issue.number, "Copilot");
+    await run.log(`Assigned to the Copilot coding agent (model: ${this.codingAgent}); waiting for its pull request`);
+    return this.follow(run, { issueUrl: issue.url });
+  }
+
+  async resume(run: SwarmRun, links: SwarmLinks): Promise<SwarmOutcome> {
+    await run.log(`Following ${links.prUrl ?? links.issueUrl} again after a restart`);
+    for (const t of run.plan.tasks) if (t.role !== "planner") await run.setTask(t.key, "running");
+    return this.follow(run, links);
+  }
+
+  private async follow(run: SwarmRun, links: SwarmLinks): Promise<SwarmOutcome> {
+    const issue = numberFromUrl(links.issueUrl);
+    let prUrl = links.prUrl;
     if (!prUrl) {
-      for (const t of run.plan.tasks) await run.setTask(t.key, "failed");
-      throw new Error(`No pull request linked to ${issue.url} within the time budget`);
+      prUrl = await waitForPr(run, issue, "Copilot");
+      if (!prUrl) {
+        for (const t of run.plan.tasks) await run.setTask(t.key, "failed");
+        throw new Error(`No pull request linked to ${links.issueUrl} within the time budget`);
+      }
+      await run.onLinked?.({ issueUrl: links.issueUrl, prUrl });
     }
 
     // The agent opens a "[WIP]" draft right away; the work is only done when it says so.
     for (const t of run.plan.tasks) if (t.role === "planner") await run.setTask(t.key, "done");
     await run.log(`Copilot opened ${prUrl} and is working on it`);
-    const work = await waitForAgent(run, Number(prUrl.split("/").pop()));
+    const work = await waitForAgent(run, numberFromUrl(prUrl));
     for (const t of run.plan.tasks) if (t.role !== "planner") await run.setTask(t.key, work === "finished" ? "done" : "failed");
     if (work !== "finished") {
       throw new Error(
@@ -65,7 +136,13 @@ export class CopilotCloudExecutor implements Executor {
           : `The Copilot coding agent did not finish ${prUrl} within the time budget`,
       );
     }
-    return { prUrl, issueUrl: issue.url, summary: "Copilot coding agent finished a draft pull request", models: { codingAgent } };
+    const finalUrl = this.opts.publishAsUser ? await publishAsUser(run, prUrl, issue) : prUrl;
+    return {
+      prUrl: finalUrl,
+      issueUrl: links.issueUrl,
+      summary: finalUrl === prUrl ? "Copilot coding agent finished a draft pull request" : `Copilot coding agent finished; republished from ${prUrl} under your account`,
+      models: { codingAgent: this.codingAgent },
+    };
   }
 }
 
@@ -95,6 +172,7 @@ export class MentionExecutor implements Executor {
     const { github, repo } = run;
     const issue = await github.createIssue(repo.fullName, run.recommendation.title, issueBody(run), ["elevate"]);
     await run.log(`Opened ${issue.url}`);
+    await run.onLinked?.({ issueUrl: issue.url });
     for (const t of run.plan.tasks) await run.setTask(t.key, "running");
     await github.authorize("assign_agent", repo.fullName, { issue: issue.number, via: this.mention });
     await github.comment(
@@ -104,9 +182,20 @@ export class MentionExecutor implements Executor {
     );
     github.turn();
     await run.log(`Asked ${this.mention}; waiting for its pull request`);
-    const prUrl = await waitForPr(run, issue.number, this.mention);
+    return this.follow(run, { issueUrl: issue.url });
+  }
+
+  async resume(run: SwarmRun, links: SwarmLinks): Promise<SwarmOutcome> {
+    await run.log(`Following ${links.prUrl ?? links.issueUrl} again after a restart`);
+    for (const t of run.plan.tasks) if (t.role !== "planner") await run.setTask(t.key, "running");
+    return this.follow(run, links);
+  }
+
+  private async follow(run: SwarmRun, links: SwarmLinks): Promise<SwarmOutcome> {
+    const prUrl = links.prUrl ?? (await waitForPr(run, numberFromUrl(links.issueUrl), this.mention));
     for (const t of run.plan.tasks) await run.setTask(t.key, prUrl ? "done" : "failed");
-    if (!prUrl) throw new Error(`No pull request linked to ${issue.url} within the time budget`);
-    return { prUrl, issueUrl: issue.url, summary: `${this.label} opened a pull request` };
+    if (!prUrl) throw new Error(`No pull request linked to ${links.issueUrl} within the time budget`);
+    if (!links.prUrl) await run.onLinked?.({ issueUrl: links.issueUrl, prUrl });
+    return { prUrl, issueUrl: links.issueUrl, summary: `${this.label} opened a pull request` };
   }
 }

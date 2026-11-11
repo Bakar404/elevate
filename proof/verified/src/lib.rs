@@ -293,6 +293,7 @@ pub enum Action {
     RunLocalAgent,
     PushBranch,
     OpenPr,
+    ClosePr,
     MergePr,
     PushDefaultBranch,
     ForcePush,
@@ -497,7 +498,7 @@ pub extern "C" fn replay_code(packed: u64) -> u32 {
     }
 }
 
-/// Action codes follow the enum; anything above 8 is force_push. Result is
+/// Action codes follow the enum; anything above 9 is force_push. Result is
 /// the verdict code (0 allow ... 6 budget exhausted).
 #[no_mangle]
 pub extern "C" fn authorize_code(
@@ -520,8 +521,9 @@ pub extern "C" fn authorize_code(
         3 => Action::RunLocalAgent,
         4 => Action::PushBranch,
         5 => Action::OpenPr,
-        6 => Action::MergePr,
-        7 => Action::PushDefaultBranch,
+        6 => Action::ClosePr,
+        7 => Action::MergePr,
+        8 => Action::PushDefaultBranch,
         _ => Action::ForcePush,
     };
     let q = WriteRequest {

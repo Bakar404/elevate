@@ -33,7 +33,17 @@ export function useTheme(): Theme {
   return theme;
 }
 
-export function ThemeToggle({ className, showLabel = true, labelClassName }: { className?: string; showLabel?: boolean; labelClassName?: string }) {
+export function ThemeToggle({
+  className,
+  showLabel = true,
+  labelClassName,
+  testId = "theme-toggle",
+}: {
+  className?: string;
+  showLabel?: boolean;
+  labelClassName?: string;
+  testId?: string;
+}) {
   const theme = useTheme();
   const next = theme === "light" ? "dark" : "light";
   return (
@@ -41,7 +51,7 @@ export function ThemeToggle({ className, showLabel = true, labelClassName }: { c
       type="button"
       onClick={() => setTheme(next)}
       aria-label={`Switch to ${next} theme`}
-      data-testid="theme-toggle"
+      data-testid={testId}
       data-theme={theme}
       className={cn("flex h-9 items-center gap-2 rounded-lg px-2.5 text-sm text-faint transition-colors hover:bg-ink/5 hover:text-muted", className)}
     >
@@ -61,5 +71,5 @@ export function ThemedToaster() {
     window.addEventListener(THEME_EVENT, toggleTheme);
     return () => window.removeEventListener(THEME_EVENT, toggleTheme);
   }, []);
-  return <Toaster theme={theme} position="bottom-right" toastOptions={{ className: "!bg-panel !border-line-strong !text-fg" }} />;
+  return <Toaster theme={theme} position="bottom-right" mobileOffset={{ bottom: "calc(5rem + env(safe-area-inset-bottom))" }} toastOptions={{ className: "!bg-panel !border-line-strong !text-fg" }} />;
 }

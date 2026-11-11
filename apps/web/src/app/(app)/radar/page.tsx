@@ -26,7 +26,7 @@ export default async function RadarPage({ searchParams }: { searchParams: Promis
   const feedSrcs = srcs.filter((s) => !s.url.startsWith("focus://"));
 
   return (
-    <div className="mx-auto max-w-5xl px-8 py-10">
+    <div className="mx-auto max-w-5xl px-4 sm:px-8 py-10">
       <div className="flex items-end justify-between gap-4">
         <div>
           <h1 className="text-2xl font-semibold tracking-tight text-balance">Radar</h1>
@@ -64,7 +64,7 @@ export default async function RadarPage({ searchParams }: { searchParams: Promis
         </div>
       </div>
 
-      <div className="sticky top-0 z-20 -mx-8 mt-6 flex gap-1 border-b border-line bg-bg/80 px-8 pt-3 backdrop-blur-md" role="tablist" aria-label="Techniques">
+      <div className="sticky top-0 z-20 -mx-4 sm:-mx-8 mt-6 tabstrip flex gap-1 border-b border-line bg-bg/80 px-4 sm:px-8 pt-3 backdrop-blur-md" role="tablist" aria-label="Techniques">
         {[
           { k: undefined, label: "Legit", n: legit.length },
           { k: "hype", label: "Hype (filtered)", n: hype.length },

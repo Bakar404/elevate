@@ -18,7 +18,7 @@ export default async function SwarmPage({ params }: { params: Promise<{ id: stri
   const events = s.events.map((e) => ({ id: e.id, kind: e.kind, level: e.level, message: e.message, swarmId: e.swarmId }));
 
   return (
-    <div className="mx-auto max-w-6xl px-8 py-8">
+    <div className="mx-auto max-w-6xl px-4 sm:px-8 py-8">
       <Link href="/swarms" className="inline-flex items-center gap-1.5 text-sm text-muted transition-colors hover:text-fg">
         <ArrowLeft className="size-4" /> Swarms
       </Link>

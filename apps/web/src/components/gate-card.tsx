@@ -30,12 +30,12 @@ export function GateCard({ id, title, question, gate }: { id: string; title: str
       {gate && gate.evidence.length > 0 && (
         <dl className="mt-4 grid gap-2 border-t border-line pt-4 text-sm">
           {gate.evidence.map((e, i) => (
-            <div key={i} className="grid grid-cols-[minmax(0,10rem)_1fr] gap-3">
+            <div key={i} className="grid gap-0.5 sm:grid-cols-[minmax(0,10rem)_1fr] sm:gap-3">
               <dt className="truncate text-faint">{e.label}</dt>
               <dd className="min-w-0 text-muted">
                 {e.url ? (
-                  <a href={e.url} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 hover:text-fg">
-                    {e.detail} <ExternalLink className="size-3" />
+                  <a href={e.url} target="_blank" rel="noreferrer" className="[overflow-wrap:anywhere] hover:text-fg">
+                    {e.detail} <ExternalLink className="inline size-3 align-[-1px]" />
                   </a>
                 ) : (
                   e.detail

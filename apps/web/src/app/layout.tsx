@@ -1,4 +1,4 @@
-import type { Metadata } from "next";
+import type { Metadata, Viewport } from "next";
 import { cookies } from "next/headers";
 import { Providers } from "@/components/providers";
 import { ThemedToaster } from "@/components/theme";
@@ -8,6 +8,16 @@ import "./globals.css";
 export const metadata: Metadata = {
   title: "elevate",
   description: "Keeps your repos current with what actually works: verified techniques, proposed as draft PRs.",
+};
+
+export const viewport: Viewport = {
+  width: "device-width",
+  initialScale: 1,
+  viewportFit: "cover",
+  themeColor: [
+    { media: "(prefers-color-scheme: dark)", color: "#0b0d10" },
+    { media: "(prefers-color-scheme: light)", color: "#f7f6f2" },
+  ],
 };
 
 export default async function RootLayout({ children }: { children: React.ReactNode }) {

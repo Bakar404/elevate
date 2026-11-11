@@ -55,7 +55,7 @@ export default async function InboxPage({ searchParams }: { searchParams: Promis
           <DitherBackground />
           <div className="absolute inset-0 bg-[linear-gradient(to_bottom,color-mix(in_oklch,var(--color-bg)_55%,transparent),color-mix(in_oklch,var(--color-bg)_85%,transparent)_70%,var(--color-bg))]" />
         </div>
-        <div className="mx-auto max-w-5xl px-8 pb-10 pt-14">
+        <div className="mx-auto max-w-5xl px-4 sm:px-8 pb-10 pt-14">
           <div className="inline-flex items-center gap-2 rounded-full border border-line-strong bg-bg/50 px-3 py-1 text-xs text-muted backdrop-blur">
             <ShieldCheck className="size-3.5 text-olive" />
             Every recommendation passed two gates: the technique is legit, and the change is sound.
@@ -83,8 +83,8 @@ export default async function InboxPage({ searchParams }: { searchParams: Promis
         </div>
       </section>
 
-      <div className="mx-auto max-w-5xl px-8 pb-8" id="inbox">
-        <div className="sticky top-0 z-20 -mx-8 mb-5 flex gap-1 border-b border-line bg-bg/80 px-8 pt-3 backdrop-blur-md" role="tablist" aria-label="Recommendations">
+      <div className="mx-auto max-w-5xl px-4 sm:px-8 pb-8" id="inbox">
+        <div className="sticky top-0 z-20 -mx-4 sm:-mx-8 mb-5 tabstrip flex gap-1 border-b border-line bg-bg/80 px-4 sm:px-8 pt-3 backdrop-blur-md" role="tablist" aria-label="Recommendations">
           {(Object.keys(TABS) as TabKey[]).map((k) => (
             <Link
               key={k}
@@ -116,7 +116,7 @@ export default async function InboxPage({ searchParams }: { searchParams: Promis
         )}
       </div>
 
-      <div className="mx-auto grid max-w-5xl gap-10 px-8 pb-16 lg:grid-cols-[1.4fr_1fr]">
+      <div className="mx-auto grid max-w-5xl gap-10 px-4 sm:px-8 pb-16 lg:grid-cols-[1.4fr_1fr]">
         <Reveal>
           <SectionHead
             icon={<Sparkles />}

@@ -34,7 +34,11 @@ export type SwarmRun = {
   budgetMinutes: number;
   /** Polling cadence for cloud executors; tests use a tiny value. */
   pollMs?: number;
+  /** Called as soon as the tracking issue, then the PR, exist, so a restart can pick the swarm up again. */
+  onLinked?: (links: SwarmLinks) => Promise<void>;
 };
+
+export type SwarmLinks = { issueUrl: string; prUrl?: string };
 
 export type SwarmOutcome = {
   prUrl?: string;
@@ -48,6 +52,11 @@ export interface Executor {
   readonly kind: ExecutorKind;
   readonly label: string;
   run(run: SwarmRun): Promise<SwarmOutcome>;
+  /**
+   * Pick up a swarm whose worker stopped after the issue was opened: follow the existing
+   * issue and PR to the end without opening or assigning anything new.
+   */
+  resume?(run: SwarmRun, links: SwarmLinks): Promise<SwarmOutcome>;
 }
 
 /** Order tasks so every task comes after the tasks it depends on. Throws on cycles or unknown deps. */

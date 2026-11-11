@@ -53,7 +53,7 @@ export function RepoSearch({ counts, shown }: { counts: Record<string, number>; 
   }, []);
 
   return (
-    <div className="sticky top-0 z-20 -mx-8 border-b border-line bg-bg/80 px-8 py-3 backdrop-blur-md">
+    <div className="sticky top-0 z-20 -mx-4 sm:-mx-8 border-b border-line bg-bg/80 px-4 sm:px-8 py-3 backdrop-blur-md">
       <div className="flex items-center gap-3">
         <label className="relative flex-1">
           <span className="sr-only">Search repos</span>
@@ -68,14 +68,14 @@ export function RepoSearch({ counts, shown }: { counts: Record<string, number>; 
             autoComplete="off"
             spellCheck={false}
             data-testid="repo-search"
-            className="h-9 w-full rounded-lg border border-line bg-panel/70 pl-9 pr-9 text-sm placeholder:text-faint focus-visible:border-line-strong"
+            className="h-9 w-full rounded-lg pointer-coarse:h-11 border border-line bg-panel/70 pl-9 pr-9 text-sm placeholder:text-faint focus-visible:border-line-strong"
           />
           {q && (
             <button
               type="button"
               aria-label="Clear search"
               onClick={() => setQ("")}
-              className="absolute right-2 top-1/2 grid size-6 -translate-y-1/2 place-items-center rounded text-faint hover:text-fg"
+              className="absolute right-2 top-1/2 grid size-6 -translate-y-1/2 place-items-center rounded text-faint pointer-coarse:size-9 hover:text-fg"
             >
               <X className="size-3.5" />
             </button>
@@ -94,7 +94,7 @@ export function RepoSearch({ counts, shown }: { counts: Record<string, number>; 
             aria-selected={f === x.k}
             onClick={() => push({ f: x.k })}
             className={cn(
-              "shrink-0 rounded-full border px-2.5 py-1 text-xs transition-colors duration-150",
+              "shrink-0 rounded-full border px-2.5 py-1 text-xs pointer-coarse:px-3.5 pointer-coarse:py-2 transition-colors duration-150",
               f === x.k ? "border-line-strong bg-raised text-fg" : "border-line text-muted hover:text-fg",
             )}
           >

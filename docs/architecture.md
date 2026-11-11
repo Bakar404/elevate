@@ -58,6 +58,8 @@ When you approve, you choose an executor. Approval adds `approve` to the history
      - `claude-action` opens an issue that mentions `@claude`, for the Claude Code Action.
      - `codex-cloud` opens an issue that mentions `@codex`.
      - Each agent opens the PR itself; elevate polls for it. The swarm's result records the planner model and the coding-agent model.
+     - **Publish as me** (Settings → "Publish swarm PRs as me", default on; `ELEVATE_PUBLISH_AS_ME=0` turns the default off). When the coding agent finishes, elevate squashes its PR into one commit authored by you on the swarm's `elevate/<id>` branch, opens the draft PR from that branch under your account, and closes the agent's PR with a link to the new one. Closing a PR is the `close_pr` write, proved as decision D6: it is only allowed on an opted-in repo, for an approved recommendation, while its swarm is running.
+     - **Resume**. Cloud swarms outlive the worker process. When a worker starts, `resumeSwarms` re-queues every swarm still marked `running` and re-attaches to its issue and PR instead of planning again, so a restart never marks a half-finished swarm as done.
    - **Local** creates a git worktree on a `elevate/<id>` branch and runs `copilot`, `claude` or `codex` non-interactively, one task at a time in dependency order. It then commits, pushes and opens a draft PR.
    - **Fake** is used in the demo and tests. It walks the same DAG and writes through the same guard to a fake GitHub.
 3. Every write goes through `guardedGitHub`, which asks the proved `authorizeWrite` first and records the result in the audit log. Refusals throw `WriteRefused`.

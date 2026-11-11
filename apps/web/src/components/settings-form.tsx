@@ -15,6 +15,7 @@ type Settings = {
   executor: string;
   thresholds: { legitimacy: number; priorFloor: number; soundness: number };
   budget: { maxTasks: number; maxMinutes: number; maxAgentTurns: number };
+  publishAsMe: boolean;
 };
 
 const PROVIDERS = [
@@ -226,6 +227,40 @@ export function SettingsForm() {
               ))}
             </select>
           </label>
+          <div className="flex items-start justify-between gap-4 rounded-lg border border-line bg-bg/40 p-3 sm:col-span-3">
+            <div className="min-w-0">
+              <p className="text-sm text-fg" id="publish-as-me-label">
+                Publish swarm PRs as me
+              </p>
+              <p className="mt-0.5 text-xs text-muted">
+                When the Copilot coding agent finishes, elevate squashes its work into one commit under your account, opens the draft PR as you, and closes
+                Copilot&apos;s PR. Turn off to keep Copilot&apos;s PR as it is.
+              </p>
+            </div>
+            <button
+              type="button"
+              role="switch"
+              aria-checked={s.publishAsMe}
+              aria-labelledby="publish-as-me-label"
+              data-testid="publish-as-me"
+              onClick={() => {
+                const publishAsMe = !s.publishAsMe;
+                setS({ ...s, publishAsMe });
+                void save({ publishAsMe }, publishAsMe ? "Swarm PRs will be published as you" : "Swarm PRs stay under Copilot");
+              }}
+              className={cn(
+                "relative mt-0.5 inline-flex h-6 w-11 shrink-0 items-center rounded-full border transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-sky",
+                s.publishAsMe ? "border-sky/60 bg-sky/30" : "border-line-strong bg-bg/60",
+              )}
+            >
+              <span
+                className={cn(
+                  "inline-block size-4 rounded-full bg-fg shadow transition-transform duration-200 motion-reduce:transition-none",
+                  s.publishAsMe ? "translate-x-6" : "translate-x-1",
+                )}
+              />
+            </button>
+          </div>
         </div>
         <div className="mt-4 flex justify-end">
           <Button size="sm" variant="primary" onClick={() => save({ thresholds: s.thresholds, budget: s.budget, executor: s.executor }, "Gates and budget saved")}>

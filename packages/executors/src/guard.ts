@@ -1,11 +1,13 @@
 import type { SwarmBudget } from "@elevate/db";
 import {
   assignCopilotAgent,
+  closePullRequest,
   commentOnIssue,
   copilotWorkStatus,
   createIssue,
   findLinkedPullRequests,
   openDraftPullRequest,
+  squashPullRequest,
   type Octokit,
 } from "@elevate/github";
 import { authorizeWrite, WriteRefused, type Status, type Usage, type WriteAction } from "@elevate/policy";
@@ -22,6 +24,9 @@ export interface GitHubWriter {
   linkedPrs(fullName: string, issue: number): Promise<{ url: string; number: number; draft: boolean; state: string }[]>;
   /** Read-only: whether the Copilot coding agent is still working on a PR. */
   agentWork(fullName: string, pr: number): Promise<AgentWork>;
+  /** Squash a PR into one commit, authored by the token's user, on a new branch. Returns the PR's body. */
+  squashPr(fullName: string, pr: number, opts: { branch: string; message: string }): Promise<{ sha: string; body: string }>;
+  closePr(fullName: string, pr: number): Promise<void>;
 }
 
 export function octokitWriter(gh: Octokit): GitHubWriter {
@@ -32,6 +37,8 @@ export function octokitWriter(gh: Octokit): GitHubWriter {
     openDraftPr: (f, o) => openDraftPullRequest(gh, f, o),
     linkedPrs: (f, i) => findLinkedPullRequests(gh, f, i),
     agentWork: (f, p) => copilotWorkStatus(gh, f, p),
+    squashPr: (f, p, o) => squashPullRequest(gh, f, p, o),
+    closePr: (f, p) => closePullRequest(gh, f, p),
   };
 }
 
@@ -115,5 +122,14 @@ export function guardedGitHub(raw: GitHubWriter, opts: GuardOptions): GuardedGit
     },
     linkedPrs: (fullName, issue) => raw.linkedPrs(fullName, issue),
     agentWork: (fullName, pr) => raw.agentWork(fullName, pr),
+    async squashPr(fullName, pr, o) {
+      const action: WriteAction = o.branch === opts.defaultBranch ? "push_default_branch" : "push_branch";
+      await authorize(action, fullName, { branch: o.branch, squash: pr });
+      return raw.squashPr(fullName, pr, o);
+    },
+    async closePr(fullName, pr) {
+      await authorize("close_pr", fullName, { pr });
+      return raw.closePr(fullName, pr);
+    },
   };
 }

@@ -150,6 +150,80 @@ describe("cloud executors", () => {
   });
 });
 
+describe("following a swarm across restarts", () => {
+  it("Copilot reports the issue, then the PR, as soon as each exists", async () => {
+    const { run } = setup({ status: "in_progress", allowSwarm: true });
+    const linked: { issueUrl: string; prUrl?: string }[] = [];
+    run.onLinked = async (l) => void linked.push(l);
+    await new CopilotCloudExecutor().run(run);
+    expect(linked).toEqual([
+      { issueUrl: "https://github.com/Bakar404/demo/issues/1" },
+      { issueUrl: "https://github.com/Bakar404/demo/issues/1", prUrl: "https://github.com/Bakar404/demo/pull/2" },
+    ]);
+  });
+
+  it("resume follows the existing PR without writing anything", async () => {
+    const { fake, run, tasks } = setup({ status: "in_progress", allowSwarm: true });
+    await fake.assignAgent("Bakar404/demo", 1);
+    fake.writes.length = 0;
+    fake.agentStates = ["working", "finished"];
+    const out = await new CopilotCloudExecutor().resume!(run, {
+      issueUrl: "https://github.com/Bakar404/demo/issues/1",
+      prUrl: "https://github.com/Bakar404/demo/pull/1",
+    });
+    expect(fake.writes).toEqual([]);
+    expect(fake.agentStates).toEqual([]);
+    expect(out.prUrl).toBe("https://github.com/Bakar404/demo/pull/1");
+    expect(tasks.impl).toBe("done");
+  });
+
+  it("resume with only the issue finds the PR Copilot linked to it", async () => {
+    const { fake, run } = setup({ status: "in_progress", allowSwarm: true });
+    await fake.assignAgent("Bakar404/demo", 7);
+    fake.writes.length = 0;
+    const out = await new CopilotCloudExecutor().resume!(run, { issueUrl: "https://github.com/Bakar404/demo/issues/7" });
+    expect(out.prUrl).toBe("https://github.com/Bakar404/demo/pull/1");
+    expect(fake.writes).toEqual([]);
+  });
+});
+
+describe("publish swarm PRs as you", () => {
+  it("squashes the agent's branch onto the swarm branch, opens the draft PR as you, and closes the agent's PR", async () => {
+    const { fake, run } = setup({ status: "in_progress", allowSwarm: true });
+    const out = await new CopilotCloudExecutor({ publishAsUser: true }).run(run);
+    expect(fake.writes.map((w) => w.op)).toEqual(["createIssue", "assignAgent", "squashPr", "openDraftPr", "comment", "closePr"]);
+    const [, , squash, open, note, close] = fake.writes;
+    expect(squash!.detail).toMatchObject({ pr: 2, branch: "elevate/add-pbt" });
+    expect(squash!.detail.message).toMatch(/^Add property-based tests\n/);
+    expect(squash!.detail.message).not.toMatch(/Co-authored-by|copilot/i);
+    expect(open!.detail).toMatchObject({ head: "elevate/add-pbt", base: "main", title: "Add property-based tests" });
+    expect(String(open!.detail.body)).toContain("Closes #1");
+    expect(String(open!.detail.body)).not.toMatch(/\[WIP\]|COPILOT CODING AGENT TIPS/);
+    expect(note!.detail).toMatchObject({ issue: 2 });
+    expect(close!.detail).toMatchObject({ pr: 2 });
+    expect(out.prUrl).toBe(`https://github.com/Bakar404/demo/pull/${open!.detail.number}`);
+  });
+
+  it("keeps the agent's PR when republishing fails", async () => {
+    const { fake, run } = setup({ status: "in_progress", allowSwarm: true });
+    fake.failSquash = true;
+    const warnings: string[] = [];
+    run.log = async (m, level) => void (level === "warn" && warnings.push(m));
+    const out = await new CopilotCloudExecutor({ publishAsUser: true }).run(run);
+    expect(out.prUrl).toBe("https://github.com/Bakar404/demo/pull/2");
+    expect(fake.writes.map((w) => w.op)).not.toContain("closePr");
+    expect(warnings.join(" ")).toMatch(/kept Copilot's pull request/i);
+  });
+
+  it("the guard refuses squashing onto the default branch and closing PRs without approval", async () => {
+    const { fake, github } = setup({ status: "in_progress", allowSwarm: true });
+    await expect(github.squashPr("Bakar404/demo", 2, { branch: "main", message: "m" })).rejects.toMatchObject({ verdict: "forbidden" });
+    const refused = setup({ status: "pr_opened", allowSwarm: true });
+    await expect(refused.github.closePr("Bakar404/demo", 2)).rejects.toMatchObject({ verdict: "not_approved" });
+    expect([...fake.writes, ...refused.fake.writes]).toEqual([]);
+  });
+});
+
 describe("copilotWorkFromEvents", () => {
   it("reads the PR timeline: working until a finished event, failed on a failure event", () => {
     expect(copilotWorkFromEvents(["assigned", "committed"])).toBe("working");

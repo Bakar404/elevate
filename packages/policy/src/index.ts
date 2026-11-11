@@ -112,6 +112,7 @@ export const ACTIONS = [
   "run_local_agent",
   "push_branch",
   "open_pr",
+  "close_pr",
   "merge_pr",
   "push_default_branch",
   "force_push",

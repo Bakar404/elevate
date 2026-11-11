@@ -24,12 +24,12 @@ export function RepoToggles({ id, name, watch, allowSwarm }: { id: string; name:
   return (
     <div className="flex items-center gap-5 text-xs text-muted">
       <Tip content="Match new techniques against this repo">
-        <label className="flex items-center gap-2">
+        <label className="flex items-center gap-2 pointer-coarse:min-h-11">
           Watch <Switch checked={state.watch} onCheckedChange={(v) => update({ watch: v })} aria-label={`Watch ${name}`} />
         </label>
       </Tip>
       <Tip content="Let approved swarms open draft PRs here">
-        <label className="flex items-center gap-2">
+        <label className="flex items-center gap-2 pointer-coarse:min-h-11">
           Swarms <Switch checked={state.allowSwarm} onCheckedChange={(v) => update({ allowSwarm: v })} aria-label={`Allow swarms on ${name}`} />
         </label>
       </Tip>
@@ -41,7 +41,7 @@ export function ActionButton({ url, label, children }: { url: string; label: str
   const router = useRouter();
   return (
     <button
-      className="inline-flex h-8 items-center gap-2 rounded-lg border border-line-strong bg-raised/70 px-3 text-[13px] font-medium transition-[transform,background-color] duration-150 ease-[var(--ease-out)] hover:bg-raised active:scale-[0.97] [&_svg]:size-4"
+      className="inline-flex h-8 shrink-0 items-center pointer-coarse:h-10 gap-2 rounded-lg border border-line-strong bg-raised/70 px-3 text-[13px] font-medium transition-[transform,background-color] duration-150 ease-[var(--ease-out)] hover:bg-raised active:scale-[0.97] [&_svg]:size-4"
       onClick={() =>
         toast.promise(
           send<{ queued: boolean; message?: string }>(url).then((r) => {

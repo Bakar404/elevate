@@ -74,7 +74,7 @@ The statuses are `candidate`, `gated_out`, `open`, `approved`, `rejected`, `in_p
 
 ### The write guard: "upon approval"
 
-The actions are `create_issue`, `comment`, `assign_agent`, `run_local_agent`, `push_branch`, `open_pr`, `merge_pr`, `push_default_branch` and `force_push`. The guard answers `allow` or a single reason for refusing.
+The actions are `create_issue`, `comment`, `assign_agent`, `run_local_agent`, `push_branch`, `open_pr`, `close_pr`, `merge_pr`, `push_default_branch` and `force_push`. The guard answers `allow` or a single reason for refusing. `close_pr` lets a swarm close the coding agent's own pull request after republishing its work under your account (decision D6); it is an ordinary write, so W2–W4 apply.
 
 | # | Requirement | Spec |
 |---|---|---|
@@ -107,3 +107,4 @@ The actions are `create_issue`, `comment`, `assign_agent`, `run_local_agent`, `p
 - **D3. What the budget stops.** The budget stops new agent work only. Pushing, commenting and opening the draft PR stay allowed, so a swarm that hits its limit can still hand you what it built. The alternative is to stop every write.
 - **D4. Reopen.** A reopened recommendation is re-gated (T6) instead of returning straight to `open`.
 - **D5. Threshold defaults.** The defaults are legitimacy 60, prior floor 30, and soundness 65. They are tuned against `fixtures/gate-eval.json` and stored in settings.
+- **D6. Closing a pull request is allowed, merging is not.** With "Publish swarm PRs as me" on, elevate squashes the coding agent's finished branch into one commit on the swarm branch, opens a draft PR under your account, and closes the agent's PR. Closing is reversible and changes no code, so it is not on the forbidden list. The alternative is to leave two open PRs.

@@ -12,7 +12,7 @@ export default async function SettingsPage() {
   const ctx = await getCtx();
   const [audit, receipt] = await Promise.all([recentAudit(ctx, 15), Promise.resolve(readReceipt())]);
   return (
-    <div className="mx-auto max-w-4xl px-8 py-10">
+    <div className="mx-auto max-w-4xl px-4 sm:px-8 py-10">
       <h1 className="text-2xl font-semibold tracking-tight">Settings</h1>
       <p className="mt-1 text-sm text-muted">Model, GitHub access, how strict the gates are, and how far a swarm may go.</p>
 
@@ -42,7 +42,7 @@ export default async function SettingsPage() {
           <>
             <div className="mt-5 grid gap-2 sm:grid-cols-2">
               {receipt.steps.map((s) => (
-                <div key={s.id} className="flex items-start gap-2 rounded-lg border border-line px-3 py-2 text-sm">
+                <div key={s.id} className="flex min-w-0 items-start gap-2 rounded-lg border border-line px-3 py-2 text-sm">
                   <span className={s.ok ? "text-olive" : "text-danger"}>{s.ok ? "✓" : "✗"}</span>
                   <div className="min-w-0">
                     <div>{s.name}</div>

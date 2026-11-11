@@ -1,6 +1,6 @@
 # Receipt: elevate's policy kernel
 
-**PASS.** Run 2026-11-10 20:37:41 UTC on win32 arm64, at elevate `uncommitted`. Written by `proof/run.mjs` from `proof/results/`; the requirements and decisions are in `proof/intent.md`.
+**PASS.** Run 2026-11-11 02:13:54 UTC on win32 arm64, at elevate `570e21b`. Written by `proof/run.mjs` from `proof/results/`; the requirements and decisions are in `proof/intent.md`.
 
 ## Requirements
 
@@ -25,23 +25,23 @@
 | T5 | A draft PR is the end. | proved (T5) | MT5 | transition: 0 of 80 differ |
 | T6 | A rejected recommendation reopens as a candidate, re-gated. | proved (T6) | MT6 | transition: 0 of 80 differ |
 | T7 | No swarm without both gates and your approval, for every event history. | proved (T7) | MT7 | replay: 0 of 131,111 differ |
-| W1 | Never merge, push to the default branch, or force-push. | proved (W1) | MW1 | authorize: 0 of 72,000 differ |
-| W2 | No write until you approve. | proved (W2) | MW2 | authorize: 0 of 72,000 differ |
-| W3 | Only repos you opted in. | proved (W3) | MW3 | authorize: 0 of 72,000 differ |
-| W4 | Only the recommendation's own repo. | proved (W4) | MW4 | authorize: 0 of 72,000 differ |
-| W5 | Pull requests are drafts. | proved (W5) | MW5 | authorize: 0 of 72,000 differ |
-| W6 | Agent work stops at the budget; publishing finished work doesn't. | proved (W6) | MW6 | authorize: 0 of 72,000 differ |
-| W7 | Otherwise the write is allowed, and only then. | proved (W7) | MW7 | authorize: 0 of 72,000 differ |
+| W1 | Never merge, push to the default branch, or force-push. | proved (W1) | MW1 | authorize: 0 of 80,000 differ |
+| W2 | No write until you approve. | proved (W2) | MW2 | authorize: 0 of 80,000 differ |
+| W3 | Only repos you opted in. | proved (W3) | MW3 | authorize: 0 of 80,000 differ |
+| W4 | Only the recommendation's own repo. | proved (W4) | MW4 | authorize: 0 of 80,000 differ |
+| W5 | Pull requests are drafts. | proved (W5) | MW5 | authorize: 0 of 80,000 differ |
+| W6 | Agent work stops at the budget; publishing finished work doesn't. | proved (W6) | MW6 | authorize: 0 of 80,000 differ |
+| W7 | Otherwise the write is allowed, and only then. | proved (W7) | MW7 | authorize: 0 of 80,000 differ |
 
 ## Steps
 
 | Step | Command | Exit | Time | Result |
 |---|---|---|---|---|
-| Prove | `verus proof/verified/src/lib.rs --crate-type=lib --edition=2021` | 0 | 4.1 s | ok: 12 verified, 0 errors |
-| Mutation check | `node proof/mutation-check.mjs` | 0 | 53.8 s | ok: 27 of 27 mutants rejected on their clause; draft gap shown |
-| Build to WASM | `cargo build --release --target wasm32-unknown-unknown` | 0 | 3.2 s | ok: proof/build/elevate_policy.wasm, 22413 bytes |
-| Test D | `vitest run packages/policy/test/differential.test.ts` | 0 | 4.4 s | ok: 0 of 2,294,396 inputs differ |
-| Negative control | `MW2 to WASM; vitest run differential.test.ts` | 1 | 31.1 s | ok: D failed, as it must: 6,000 of 72,000 authorize inputs differ |
+| Prove | `verus proof/verified/src/lib.rs --crate-type=lib --edition=2021` | 0 | 3.6 s | ok: 12 verified, 0 errors |
+| Mutation check | `node proof/mutation-check.mjs` | 0 | 32.8 s | ok: 27 of 27 mutants rejected on their clause; draft gap shown |
+| Build to WASM | `cargo build --release --target wasm32-unknown-unknown` | 0 | 3.1 s | ok: proof/build/elevate_policy.wasm, 22413 bytes |
+| Test D | `vitest run packages/policy/test/differential.test.ts` | 0 | 1.7 s | ok: 0 of 2,302,396 inputs differ |
+| Negative control | `MW2 to WASM; vitest run differential.test.ts` | 1 | 2.5 s | ok: D failed, as it must: 7,000 of 80,000 authorize inputs differ |
 
 ## Mutation check
 
@@ -90,9 +90,9 @@ The shipped TypeScript (`packages/policy`) against the proved WASM:
 | rank | 1,030,301 | 0 | 101 |
 | transition | 80 | 0 | 9 |
 | replay | 131,111 | 0 | 9 |
-| authorize | 72,000 | 0 | 7 |
+| authorize | 80,000 | 0 | 7 |
 
-**Negative control.** The same test against mutant MW2 (an open (unapproved) recommendation may write) built to WASM must fail. It failed, as it must: 6,000 of 72,000 authorize inputs differ. One of them: `{"input":{"action":"create_issue","status":"open","allow":0,"same":0,"draft":0,"budget":[0,0,0,0,0,0]},"ts":2,"wasm":3}`.
+**Negative control.** The same test against mutant MW2 (an open (unapproved) recommendation may write) built to WASM must fail. It failed, as it must: 7,000 of 80,000 authorize inputs differ. One of them: `{"input":{"action":"create_issue","status":"open","allow":0,"same":0,"draft":0,"budget":[0,0,0,0,0,0]},"ts":2,"wasm":3}`.
 
 ## Trusted pieces
 
@@ -113,7 +113,7 @@ The shipped TypeScript (`packages/policy`) against the proved WASM:
 | Rust | rustc 1.99.1 (58cf8f9c3 2026-10-13) |
 | Node | v26.13.0 |
 | Vitest | 5.1.0 |
-| sha256 `proof/verified/src/lib.rs` | `2c656a5d50b85683945c51139fee333b876ca3924507610a5b2bca3bd637311d` |
-| sha256 `packages/policy/src/index.ts` | `9e117ac3dbb352edf8d2e8a0de4395e34576862a378a2a4b351178a3fe879b2b` |
-| sha256 `proof/build/elevate_policy.wasm` | `65118fc3ab754f27c9c1956cf7f1b81fc930d87dcdffa6b4a8ded9fb4923f6e4` |
-| sha256 MW2 WASM (negative control) | `601b46b705f939db589c41a7bd86da99fca83bbf0b8c8958809ffe872d985b9a` |
+| sha256 `proof/verified/src/lib.rs` | `76aac8b68004434ddc161879da2cfc66a26b1a85c5a2cb0a96f658b04c66ae70` |
+| sha256 `packages/policy/src/index.ts` | `262f9a25a7679c3d8d0ed345e6b9d65063c4594e5f89d33fbb92549ab5aadd0a` |
+| sha256 `proof/build/elevate_policy.wasm` | `bcf67fd2102b40dcf4736313424ac29c6c52dae1271f9c48080c652ac1719d87` |
+| sha256 MW2 WASM (negative control) | `5c25f5acc7d7185292228019bf4a24fc5ba8d1727e724cc0aceca9ac8ef0073c` |

@@ -32,6 +32,12 @@
 
   --animate-shimmer: shimmer 2.4s linear infinite;
   --animate-fade-up: fade-up 400ms var(--ease-out) both;
+  --animate-drawer-in: drawer-in 300ms var(--ease-drawer) both;
+
+  @keyframes drawer-in {
+    from { transform: translateX(-100%); }
+    to { transform: translateX(0); }
+  }
 
   @keyframes shimmer {
     from { background-position: 200% 0; }
@@ -95,6 +101,26 @@ html {
   mask-image: linear-gradient(to right, transparent, #000 1.5rem, #000 calc(100% - 1.5rem), transparent);
 }
 .rail::-webkit-scrollbar { display: none; }
+
+/* Tab strips scroll sideways on narrow screens instead of pushing the page wider. */
+.tabstrip {
+  overflow-x: auto;
+  scrollbar-width: none;
+  overscroll-behavior-x: contain;
+}
+.tabstrip::-webkit-scrollbar { display: none; }
+.tabstrip > * { flex-shrink: 0; white-space: nowrap; }
+
+@media (max-width: 767px) {
+  /* iOS zooms into any field under 16px. */
+  input, textarea, select { font-size: 16px !important; }
+  html { scroll-padding-bottom: calc(5rem + env(safe-area-inset-bottom)); }
+}
+
+html {
+  -webkit-text-size-adjust: 100%;
+  -webkit-tap-highlight-color: transparent;
+}
 
 html,
 body {

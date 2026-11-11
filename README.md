@@ -40,7 +40,11 @@ Proof-driven development, speculative decoding, weight-space editing, whatever l
 
 You approve, and elevate sends a swarm of agents that plan, implement, test and review the change, then open a **draft** PR. It never merges.
 
+By default the PR is yours: when the Copilot coding agent finishes, elevate squashes its work into one commit under your account, opens the draft PR as you and closes Copilot's PR. Turn off "Publish swarm PRs as me" in Settings to keep Copilot's PR as it is.
+
 Repo profiles stay current: every few minutes elevate checks each watched repo, and when the default branch has a new commit it re-profiles the repo at that commit and re-matches it against known techniques.
+
+It works on your phone too: below 768px the sidebar becomes a bottom tab bar, chat history opens in a drawer, and every page fits the screen with no sideways scrolling.
 
 The model runtime is the [GitHub Copilot SDK](https://github.com/github/copilot-sdk), so it runs on your Copilot subscription. You can bring your own key for Anthropic, OpenAI or Azure models. Swarms can run on:
 
@@ -192,7 +196,8 @@ In Docker, put `GITHUB_TOKEN` (and any BYOK key) in `.env`, because a container 
 
 - Nothing is written to GitHub until you approve, and only to repos you opted in.
 - Pull requests are drafts. elevate never merges, pushes to a default branch, or force-pushes.
-- Every swarm has a budget for tasks, minutes and agent turns.
+- Every swarm has a budget for tasks, minutes and agent turns. Swarms still running when the worker restarts are resumed, not re-planned.
+- The only PR elevate closes is the coding agent's own PR after republishing it as you, and only while that swarm is running.
 - Every write is checked by the proved guard and recorded in the audit log.
 
 ## Built with

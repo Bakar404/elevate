@@ -41,6 +41,7 @@
     <a href="#swarm">Swarm</a>
     <a href="#proof">Proof</a>
     <a href="#models">Models</a>
+    <a href="#phone">Phone</a>
     <a href="#built-with">Built with</a>
   </nav>
   <div class="actions">
@@ -102,8 +103,10 @@
       <h2>From a headline to a draft PR, with evidence at every step.</h2>
       <p>Feeds are the same for everyone. Searches built from each watched repo's profile, its stack and domains, go out to HN, arXiv and GitHub, so what elevate finds is relevant to the code you actually have.</p>
     </header>
-    <img class="diagram only-dark" src="images/pipeline-dark.svg" width="1200" height="470" alt="Sources and your repos feed triage and profiles. A matcher pairs techniques with repos. Gate 1 checks legitimacy, Gate 2 checks soundness, and passing recommendations reach the inbox. When you approve, a swarm opens a draft PR.">
-    <img class="diagram only-light" src="images/pipeline-light.svg" width="1200" height="470" alt="Sources and your repos feed triage and profiles. A matcher pairs techniques with repos. Gate 1 checks legitimacy, Gate 2 checks soundness, and passing recommendations reach the inbox. When you approve, a swarm opens a draft PR.">
+    <div class="diagram-scroll" tabindex="0" role="region" aria-label="Diagram, scrolls sideways on small screens">
+      <img class="diagram only-dark" src="images/pipeline-dark.svg" width="1200" height="470" alt="Sources and your repos feed triage and profiles. A matcher pairs techniques with repos. Gate 1 checks legitimacy, Gate 2 checks soundness, and passing recommendations reach the inbox. When you approve, a swarm opens a draft PR.">
+      <img class="diagram only-light" src="images/pipeline-light.svg" width="1200" height="470" alt="Sources and your repos feed triage and profiles. A matcher pairs techniques with repos. Gate 1 checks legitimacy, Gate 2 checks soundness, and passing recommendations reach the inbox. When you approve, a swarm opens a draft PR.">
+    </div>
     <div class="duo">
       <figure class="frame small">
         <img class="only-dark" src="images/recommendation-dark.png" width="1440" height="900" alt="A recommendation with evidence for both gates" loading="lazy">
@@ -124,8 +127,10 @@
       <h2>Approve once. A team of agents does the work.</h2>
       <p>A planner reads the repo profile and fans the work out to implementers. A tester runs the before/after measure from Gate 2, and a skeptical reviewer on a second model checks the diff. Only then does a guarded publisher open the draft PR.</p>
     </header>
-    <img class="diagram only-dark" src="images/swarm-dark.svg" width="1200" height="300" alt="Planner fans out to implementers, then tester, reviewer and publisher, which opens a draft PR" loading="lazy">
-    <img class="diagram only-light" src="images/swarm-light.svg" width="1200" height="300" alt="Planner fans out to implementers, then tester, reviewer and publisher, which opens a draft PR" loading="lazy">
+    <div class="diagram-scroll" tabindex="0" role="region" aria-label="Diagram, scrolls sideways on small screens">
+      <img class="diagram only-dark" src="images/swarm-dark.svg" width="1200" height="300" alt="Planner fans out to implementers, then tester, reviewer and publisher, which opens a draft PR" loading="lazy">
+      <img class="diagram only-light" src="images/swarm-light.svg" width="1200" height="300" alt="Planner fans out to implementers, then tester, reviewer and publisher, which opens a draft PR" loading="lazy">
+    </div>
     <figure class="frame">
       <img class="only-dark" src="images/swarm-dark.png" width="1440" height="900" alt="A swarm running plan, implement, test and review with a live budget" loading="lazy">
       <img class="only-light" src="images/swarm-light.png" width="1440" height="900" alt="A swarm running plan, implement, test and review with a live budget" loading="lazy">
@@ -139,8 +144,10 @@
       <h2>The rules between a headline and your repo are proved, not just tested.</h2>
       <p>The gate decisions, the recommendation lifecycle and the write guard are specified and proved in Verus, following the PDD Kit method. One bug is planted per clause, and Verus must reject each one. The TypeScript the app runs is diff-tested against the proved code built to WASM, and a negative control shows that test can fail.</p>
     </header>
-    <img class="diagram only-dark" src="images/proof-dark.svg" width="1200" height="210" alt="Intent, Verus spec and proof, mutation check, differential test against WASM, receipt" loading="lazy">
-    <img class="diagram only-light" src="images/proof-light.svg" width="1200" height="210" alt="Intent, Verus spec and proof, mutation check, differential test against WASM, receipt" loading="lazy">
+    <div class="diagram-scroll" tabindex="0" role="region" aria-label="Diagram, scrolls sideways on small screens">
+      <img class="diagram only-dark" src="images/proof-dark.svg" width="1200" height="210" alt="Intent, Verus spec and proof, mutation check, differential test against WASM, receipt" loading="lazy">
+      <img class="diagram only-light" src="images/proof-light.svg" width="1200" height="210" alt="Intent, Verus spec and proof, mutation check, differential test against WASM, receipt" loading="lazy">
+    </div>
     <div class="stats">
       <div class="stat"><span class="n" data-count="26" data-dec="0">26</span><span class="l">requirements, proved in Verus</span></div>
       <div class="stat"><span class="n" data-count="1" data-dec="2">1.00</span><span class="l">Gate 1 precision on the eval set</span></div>
@@ -161,6 +168,31 @@
       <img class="only-light" src="images/chat-light.png" width="1440" height="900" alt="Chat with the model picker open" loading="lazy">
       <figcaption><b>Chat.</b> Ask about your repos and the radar, and pick the model for each conversation.</figcaption>
     </figure>
+  </section>
+
+  <section class="block reveal" id="phone">
+    <header class="sec-head">
+      <p class="eyebrow">On your phone</p>
+      <h2>Approve a change from wherever you are.</h2>
+      <p>The app is built for small screens too. A tab bar sits within thumb reach, wide lists scroll sideways instead of breaking the page, and every control is big enough to tap. Dark and light themes follow your setting.</p>
+    </header>
+    <div class="phones" tabindex="0" role="region" aria-label="Phone screenshots, scroll sideways">
+      <figure class="phone">
+        <img class="only-dark" src="images/phone-inbox-dark.png" width="780" height="1688" alt="The inbox on a phone: live map of repos and techniques, with a bottom tab bar" loading="lazy">
+        <img class="only-light" src="images/phone-inbox-light.png" width="780" height="1688" alt="The inbox on a phone: live map of repos and techniques, with a bottom tab bar" loading="lazy">
+        <figcaption>Inbox</figcaption>
+      </figure>
+      <figure class="phone">
+        <img class="only-dark" src="images/phone-recommendation-dark.png" width="780" height="1688" alt="A recommendation on a phone with the approve button in reach" loading="lazy">
+        <img class="only-light" src="images/phone-recommendation-light.png" width="780" height="1688" alt="A recommendation on a phone with the approve button in reach" loading="lazy">
+        <figcaption>Recommendation</figcaption>
+      </figure>
+      <figure class="phone">
+        <img class="only-dark" src="images/phone-radar-dark.png" width="780" height="1688" alt="The radar on a phone with feeds and technique tabs" loading="lazy">
+        <img class="only-light" src="images/phone-radar-light.png" width="780" height="1688" alt="The radar on a phone with feeds and technique tabs" loading="lazy">
+        <figcaption>Radar</figcaption>
+      </figure>
+    </div>
   </section>
 
   <section class="block reveal" id="built-with">

@@ -6,7 +6,9 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import {
   activityGraph,
   ApprovalError,
+  applyEvent,
   approveRecommendation,
+  resumeSwarms,
   demoLLM,
   discoveryFeed,
   drain,
@@ -181,5 +183,42 @@ describe("planToTasks", () => {
     expect(tasks.find((t) => t.key === "b")?.dependsOn).toEqual(["plan", "a"]);
     const idx = new Map(keys.map((k, i) => [k, i]));
     for (const t of tasks) for (const d of t.dependsOn) expect(idx.get(d)!).toBeLessThan(idx.get(t.key)!);
+  });
+});
+
+describe("swarms survive a restart", () => {
+  it("a resumed swarm follows its existing PR, publishes it as you, and opens nothing new", async () => {
+    const [r] = (await recs()).filter((x) => x.rec.status === "open");
+    expect(r, "demo should leave an open recommendation").toBeDefined();
+    if (!r) return;
+    const swarm = await approveRecommendation(ctx, r.rec.id, { executor: "copilot-cloud", allowRepo: true });
+    // The worker died after Copilot opened its PR: the swarm row and tasks say "running".
+    await applyEvent(ctx.db, r.rec.id, "start", {}, "test");
+    await github.assignAgent(r.repo, 99);
+    const [agentPr] = await github.linkedPrs(r.repo, 99);
+    await ctx.db
+      .update(swarms)
+      .set({ status: "running", branch: "elevate/resumed", issueUrl: `https://github.com/${r.repo}/issues/99`, prUrl: agentPr!.url, startedAt: new Date() })
+      .where(eq(swarms.id, swarm.id));
+    await ctx.db.insert(swarmTasks).values([
+      { swarmId: swarm.id, key: "plan", role: "planner", title: "Plan", instructions: "", dependsOn: [], status: "done" },
+      { swarmId: swarm.id, key: "impl", role: "implementer", title: "Impl", instructions: "", dependsOn: ["plan"], status: "running" },
+    ]);
+    await drain(ctx);
+    const before = github.writes.length;
+
+    expect(await resumeSwarms(ctx)).toBe(1);
+    await drain(ctx);
+
+    const [done] = await ctx.db.select().from(swarms).where(eq(swarms.id, swarm.id));
+    expect(done?.status).toBe("succeeded");
+    expect(github.writes.slice(before).map((w) => w.op)).toEqual(["squashPr", "openDraftPr", "comment", "closePr"]);
+    expect(done?.prUrl).not.toBe(agentPr!.url);
+    expect(done?.result).toMatchObject({ resumed: true });
+    const tasks = await ctx.db.select().from(swarmTasks).where(eq(swarmTasks.swarmId, swarm.id));
+    expect(tasks.every((t) => t.status === "done")).toBe(true);
+    const after = await recById(r.rec.id);
+    expect(after.status).toBe("pr_opened");
+    expect(after.history.slice(-2)).toEqual(["start", "pr"]);
   });
 });

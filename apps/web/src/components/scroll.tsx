@@ -51,7 +51,7 @@ export function BackToTop() {
       aria-label="Back to top"
       onClick={() => window.scrollTo({ top: 0, behavior: matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth" })}
       className={cn(
-        "fixed bottom-6 right-6 z-40 grid size-10 place-items-center rounded-full border border-line-strong bg-raised/80 text-muted shadow-lg backdrop-blur transition-[opacity,transform,color] duration-200 hover:text-fg",
+        "fixed bottom-6 right-6 z-40 max-md:bottom-[calc(5rem+env(safe-area-inset-bottom))] max-md:right-4 grid size-10 place-items-center rounded-full border border-line-strong bg-raised/80 text-muted shadow-lg backdrop-blur transition-[opacity,transform,color] duration-200 hover:text-fg",
         show ? "opacity-100" : "pointer-events-none translate-y-2 opacity-0",
       )}
     >

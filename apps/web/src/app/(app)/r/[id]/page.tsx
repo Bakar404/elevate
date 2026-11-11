@@ -32,7 +32,7 @@ export default async function RecommendationPage({ params }: { params: Promise<{
   const h = r.hypothesis;
 
   return (
-    <div className="mx-auto max-w-5xl px-8 py-8">
+    <div className="mx-auto max-w-5xl px-4 sm:px-8 py-8">
       <Link href="/" className="inline-flex items-center gap-1.5 text-sm text-muted transition-colors hover:text-fg">
         <ArrowLeft className="size-4" /> Inbox
       </Link>

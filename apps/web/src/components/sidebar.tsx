@@ -70,7 +70,7 @@ export function Sidebar({
       data-collapsed={collapsed}
       className={cn(
         "sticky top-0 z-20 flex h-dvh shrink-0 flex-col overflow-hidden border-r border-line bg-bg/80 px-3 py-4 backdrop-blur-md",
-        "transition-[width] duration-300 ease-[var(--ease-drawer)] max-md:w-16",
+        "transition-[width] duration-300 ease-[var(--ease-drawer)] max-md:hidden",
         collapsed ? "w-16" : "w-56",
       )}
     >

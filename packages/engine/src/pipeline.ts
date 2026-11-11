@@ -5,7 +5,7 @@ import { legitimacyGate, soundnessGate } from "./gates";
 import { fetchSourceItems, seedSources, sweepSources, triageItems } from "./ingest";
 import { matchRepo, matchTechnique } from "./matcher";
 import { profileRepo, syncRepos } from "./profiler";
-import { runSwarm } from "./swarm";
+import { resumeSwarms, runSwarm } from "./swarm";
 
 type Handler = (ctx: Ctx, payload: Record<string, unknown>, job: ClaimedJob) => Promise<unknown>;
 
@@ -28,7 +28,7 @@ export const HANDLERS: Record<string, Handler> = {
   "technique.legitimacy": (ctx, p) => legitimacyGate(ctx, str(p, "techniqueId")),
   "technique.match": (ctx, p) => matchTechnique(ctx, str(p, "techniqueId")),
   "recommendation.soundness": (ctx, p) => soundnessGate(ctx, str(p, "recommendationId")),
-  "swarm.run": (ctx, p) => runSwarm(ctx, str(p, "swarmId")),
+  "swarm.run": (ctx, p) => runSwarm(ctx, str(p, "swarmId"), { resume: p.resume === true }),
 };
 
 export async function runJob(ctx: Ctx, job: ClaimedJob) {
@@ -89,6 +89,7 @@ export function startWorker(ctx: Ctx, opts: { pollMs?: number; maxSwarms?: numbe
 
   const loop = (async () => {
     await recoverStaleJobs(ctx.db);
+    await resumeSwarms(ctx).catch((err) => console.error("resumeSwarms failed", err));
     let lastTick = 0;
     while (!stopped) {
       if (Date.now() - lastTick > 30_000) {

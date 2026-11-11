@@ -182,3 +182,56 @@ test("home and radar show what is being searched for each repo, and the feed scr
   await expect(page.getByTestId("focus-sources")).toContainText("searches HN, arXiv and GitHub");
   await expect(page.getByTestId("feed-item").first()).toBeVisible();
 });
+test("swarm PRs are published as you by default, and that can be turned off", async ({ page }) => {
+  await page.goto("/settings");
+  const toggle = page.getByTestId("publish-as-me");
+  await expect(toggle).toHaveAttribute("aria-checked", "true");
+  const saved = page.waitForResponse((r) => r.url().endsWith("/api/settings") && r.request().method() === "PUT");
+  await toggle.click();
+  await expect(toggle).toHaveAttribute("aria-checked", "false");
+  expect((await saved).ok()).toBe(true);
+  await page.reload();
+  await expect(page.getByTestId("publish-as-me")).toHaveAttribute("aria-checked", "false");
+  const restored = page.waitForResponse((r) => r.url().endsWith("/api/settings") && r.request().method() === "PUT");
+  await page.getByTestId("publish-as-me").click();
+  await expect(page.getByTestId("publish-as-me")).toHaveAttribute("aria-checked", "true");
+  await restored;
+});
+
+test.describe("on a phone", () => {
+  test.use({ viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true });
+
+  const overflow = (page: Page) => page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth);
+
+  test("pages fit the screen and the tab bar replaces the sidebar", async ({ page }) => {
+    await waitForOpenRecs(page);
+    await page.goto("/");
+    await expect(page.getByTestId("sidebar")).toBeHidden();
+    await expect(page.getByTestId("mobile-topbar")).toBeVisible();
+    const tabs = page.getByTestId("mobile-tabbar");
+    for (const [name, url] of [["Radar", /\/radar$/], ["Repos", /\/repos$/], ["Swarms", /\/swarms$/], ["Settings", /\/settings$/], ["Inbox", /\/$/]] as const) {
+      await tabs.getByRole("link", { name }).click();
+      await expect(page).toHaveURL(url);
+      await expect(tabs.getByRole("link", { name })).toHaveAttribute("aria-current", "page");
+      expect(await overflow(page)).toBeLessThanOrEqual(0);
+    }
+    await page.getByTestId("rec-card").first().click();
+    await expect(page).toHaveURL(/\/r\//);
+    expect(await overflow(page)).toBeLessThanOrEqual(0);
+  });
+
+  test("chat history opens in a drawer", async ({ page }) => {
+    await page.goto("/chat");
+    await page.getByRole("button", { name: "New chat" }).click();
+    await page.getByLabel("Message").fill("what is on the radar");
+    await page.getByLabel("Send").click();
+    await expect(page.getByTestId("messages").locator("[data-role=assistant]")).toHaveCount(1);
+    await expect(page.getByTestId("messages").locator("[data-role=assistant]")).toContainText(/\w/);
+    await page.getByTestId("threads-open").click();
+    const row = page.getByTestId("thread-mobile").filter({ hasText: "what is on the radar" });
+    await expect(row).toHaveCount(1);
+    await expect(row.getByRole("button", { name: /Delete/ })).toBeVisible();
+    await row.getByRole("button", { name: "what is on the radar", exact: true }).click();
+    await expect(page.getByTestId("threads-drawer")).toHaveCount(0);
+  });
+});

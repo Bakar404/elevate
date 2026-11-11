@@ -4,7 +4,7 @@ Measure gates and implementation separately. Compare the **current configured/ru
 
 ## Configuration and accounting
 
-Model resolution is role override → `ELEVATE_MODEL` → runtime default (no explicit model selection):
+Model resolution is role override → `ELEVATE_MODEL` → existing configured/runtime default (no new default model selection):
 
 | Variable | Role |
 | --- | --- |
@@ -77,9 +77,9 @@ Prerequisites: an installed/authenticated CLI selected by `ELEVATE_LOCAL_AGENT=c
 
 The six runnable, intentionally defective seeds and immutable acceptance scripts are embedded in `fixtures/swarm-bench-tasks.json`. They are small stand-ins derived from the profiles in `packages/engine/src/demo.ts`, not full demo repository clones: TypeScript parser/posting, Python stub decoding/batching, and Rust host frame/scheduling functions. No external packages, model weights, hardware or inference service are needed by their acceptance tests.
 
-For each task/repeat, the harness materializes a fresh project-local seed. Actual `CopilotLLM` calls use role `swarm` and `PlanSchema` to plan from the source/specification. Actual `LocalExecutor` fixture mode copies that seed into a fresh local git repository with no remotes, skips remote clone/token acquisition and git push, runs the selected CLI, and independently executes acceptance checks. Trusted command arguments come from the committed fixture, not from the agent or model plan. Acceptance scripts are held in harness memory rather than trusted from writable model tests; a trusted wrapper requires the committed positive test count to complete successfully, so an early zero exit or omitted tests fails verification. A final `ReviewSchema` model call reviews the actual diff; rejection prevents draft capture.
+For each task/repeat, the harness materializes a fresh seed in the system temporary directory. Actual `CopilotLLM` calls use role `swarm` and `PlanSchema` to plan from the source/specification. Actual `LocalExecutor` fixture mode copies that seed into a fresh local git repository with no remotes, skips remote clone/token acquisition and git push, runs the selected CLI, and independently executes acceptance checks. Trusted command arguments come from the committed fixture, not from the agent or model plan. Acceptance scripts are held in harness memory rather than trusted from writable model tests; a trusted wrapper requires the committed positive test count to complete successfully, so an early zero exit or omitted tests fails verification. A final `ReviewSchema` model call reviews the actual diff; rejection prevents draft capture.
 
-The fixture path still calls `authorizePush` normally and captures a draft payload through `guardedGitHub` backed **only by FakeGitHub**. No executor path publishes an issue, branch or PR to GitHub. Materialized seeds use git-ignored project-local `.data-swarm-bench*` paths; executor scratch follows the system temporary directory (`TMPDIR` where configured). Both are cleaned after each task. Restricted environments can direct `TMPDIR` to an ignored project-local directory. This is the existing CLI trust/isolation model, **not an OS sandbox**: powerful agents are instructed to edit fixture files only and not perform network/git/GitHub operations. Run in a disposable container with suitable network/filesystem restrictions when stronger agent containment is required. Model planning/review and CLI inference necessarily use their configured model services.
+The fixture path still calls `authorizePush` normally and captures a draft payload through `guardedGitHub` backed **only by FakeGitHub**. No executor path publishes an issue, branch or PR to GitHub. Materialized seeds and executor scratch use `mkdtemp` under the system temporary directory (`node:os.tmpdir()`, honoring `TMPDIR` where configured). Both are cleaned after each task; no scratch directories are created in the repository by default. This is the existing CLI trust/isolation model, **not an OS sandbox**: powerful agents are instructed to edit fixture files only and not perform network/git/GitHub operations. Run in a disposable container with suitable network/filesystem restrictions when stronger agent containment is required. Model planning/review and CLI inference necessarily use their configured model services.
 
 Fake mode runs the **actual FakeExecutor task DAG** through **guardedGitHub** and an in-memory FakeGitHub writer, including authorization and budgets. It does not create real issues, PRs, git changes, model sessions, or network requests. Its only filesystem output is an explicitly requested JSON report; it never materializes or executes fixture code. A read-only `git rev-parse HEAD` records the report's revision.
 
@@ -95,11 +95,11 @@ Fake mode runs the **actual FakeExecutor task DAG** through **guardedGitHub** an
 
 ## Decision rule before changing defaults
 
-Choose task/time/turn limits, a primary quality metric for the role being considered, and a maximum USD-per-run budget **before** running candidates. Run the current baseline and GPT-5.4 candidate on the same fixtures with at least three independent live repeats. Gate candidates must retain existing safety checks (no hype/unsound false positives, legitimate recall at least 0.75) and not increase contradictions.
+Choose task/time/turn limits, a primary quality metric for the role being considered, and a maximum USD-per-run budget **before** running candidates. Run the current baseline and GPT-5.4 candidate on the same fixtures with at least three independent live repeats. Gate candidates must retain existing safety checks (no hype/unsound false positives, legitimate recall at least 0.75), not regress mean precision/recall, and not increase mean contradictions.
 
 Recommend a change only when **all** conditions hold:
 
-1. The candidate's mean improvement gap on the predeclared primary metric exceeds **one sample standard deviation**: `mean(candidate) - mean(current) > max(sd(candidate), sd(current))`. This conservative rule requires a gap larger than one SD of either run distribution; a tie or smaller gap is inconclusive, not a win.
+1. The candidate's mean improvement gap on the predeclared primary metric exceeds **one sample standard deviation**: `improvement > max(sd(candidate), sd(current))`. For precision, recall and success rate, improvement is `mean(candidate) - mean(current)`; for contradiction count it is `mean(current) - mean(candidate)`. A tie or smaller gap is inconclusive, not a win.
 2. **Gate 2 precision does not regress** relative to the current baseline.
 3. **Swarm test-and-draft success is not lower** than the current baseline, with no safety violations.
 4. Both execution limits and the **configured/predeclared financial budget cap** are met using known complete cost. Null/unknown cost cannot establish affordability; partial SDK cost cannot establish a full-swarm saving.
@@ -110,13 +110,18 @@ Inspect per-task failures as well as means. If results are noisy, collect more r
 
 Fill only from saved live reports. `TBD` is intentionally not a measurement.
 
-| Role / executor | Model | Fixture hash / revision | Live runs | Quality mean ± sample SD | Tokens mean ± SD | USD/run mean ± SD | Budget violations | Decision |
-| --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| Gate 1 | current baseline | TBD | TBD | TBD precision / recall / contradictions | TBD | TBD | TBD | TBD |
-| Gate 1 | gpt-5.4 candidate | TBD | TBD | TBD | TBD | TBD | TBD | TBD |
-| Gate 2 | current baseline | TBD | TBD | TBD precision / recall / contradictions | TBD | TBD | TBD | TBD |
-| Gate 2 | gpt-5.4 candidate | TBD | TBD | TBD | TBD | TBD | TBD | TBD |
-| Swarm / fixture-only local | current baseline | TBD | TBD; credentials/CLI required | TBD test-and-draft success | TBD | TBD | TBD | no decision |
-| Swarm / fixture-only local | gpt-5.4 candidate | TBD | TBD; credentials/CLI required | TBD | TBD | TBD | TBD | no decision |
+Record the fixture hash, git revision and repeat count alongside each comparison.
+
+| Model | Gate | Precision mean ± SD | Recall mean ± SD | Contradictions mean ± SD | Input/output tokens (total) | USD (total) |
+| --- | --- | --- | --- | --- | --- | --- |
+| current baseline | 1 | TBD | TBD | TBD | TBD | TBD |
+| gpt-5.4 candidate | 1 | TBD | TBD | TBD | TBD | TBD |
+| current baseline | 2 | TBD | TBD | TBD | TBD | TBD |
+| gpt-5.4 candidate | 2 | TBD | TBD | TBD | TBD | TBD |
+
+| Model | Swarm success mean ± SD | Input/output tokens (total) | USD (total) | Budget overruns | Decision |
+| --- | --- | --- | --- | --- | --- |
+| current baseline | TBD | TBD | TBD | TBD | no decision |
+| gpt-5.4 candidate | TBD | TBD | TBD | TBD | no decision |
 
 Matcher/profiler selection needs its own labeled evaluation; these gate/swarm fixtures do not establish matching quality.

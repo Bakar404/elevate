@@ -1,7 +1,8 @@
 import { z } from "zod";
 import { accessSync, constants } from "node:fs";
-import { mkdir, mkdtemp, rm, rmdir, writeFile } from "node:fs/promises";
-import { delimiter, dirname, join, resolve } from "node:path";
+import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
+import { delimiter, dirname, join } from "node:path";
+import { tmpdir } from "node:os";
 import { CopilotLLM, estimateCostUsd, modelConfigFromEnv, UsageRecorder, type LLM } from "../../packages/agent/src/index.ts";
 import { FakeExecutor, FakeGitHub, LocalExecutor, createLocalBenchmarkGitHub, guardedGitHub, topoOrder, type Executor, type ExecutorOptions, type LocalAgent, type SwarmPlan, type SwarmRun } from "../../packages/executors/src/index.ts";
 import { PLAN_SYSTEM, PlanSchema, REVIEW_SYSTEM, ReviewSchema } from "../../packages/engine/src/prompts.ts";
@@ -229,12 +230,9 @@ export function fixtureVerification(task: BenchTask): { command: string; args: s
 }
 
 export async function materializeFixture(task: BenchTask): Promise<{ directory: string; cleanup: () => Promise<void> }> {
-  const root = resolve(".data-swarm-bench-fixtures");
-  await mkdir(root, { recursive: true });
-  const directory = await mkdtemp(join(root, `${task.id}-`));
+  const directory = await mkdtemp(join(tmpdir(), `elevate-bench-${task.id}-`));
   const cleanup = async () => {
     await rm(directory, { recursive: true, force: true });
-    await rmdir(root).catch(() => {});
   };
   try {
     for (const [path, content] of Object.entries(task.fixture.files)) {

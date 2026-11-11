@@ -1,11 +1,12 @@
 import { readFileSync } from "node:fs";
-import { writeFile } from "node:fs/promises";
+import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
-import { join } from "node:path";
+import { delimiter, dirname, join } from "node:path";
+import { tmpdir } from "node:os";
 import { describe, expect, it, vi } from "vitest";
 import { FakeLLM, UsageRecorder } from "../../packages/agent/src/index.ts";
-import { FakeExecutor, type ExecutorOptions, type SwarmRun } from "../../packages/executors/src/index.ts";
+import { FakeExecutor, LocalExecutor, type ExecutorOptions, type SwarmRun } from "../../packages/executors/src/index.ts";
 import { aggregateBench, assertSafeExecutor, fixtureVerification, FixtureSchema, formatBenchTable, materializeFixture, parseBenchArgs, runBenchTask, runLocalBenchTask, sampleStats, taskPlan } from "./swarm-bench.ts";
 
 const execute = promisify(execFile);
@@ -150,6 +151,15 @@ describe("swarm benchmark", () => {
     expect(() => FixtureSchema.parse(invalid)).toThrow();
   });
 
+  it("materializes fixture seeds under the configured system temporary directory", async () => {
+    const workspace = await materializeFixture(task);
+    try {
+      expect(dirname(workspace.directory)).toBe(tmpdir());
+    } finally {
+      await workspace.cleanup();
+    }
+  });
+
   it("explicitly enables TypeScript stripping on the minimum supported Node runtime", () => {
     expect(fixtureVerification(task).args.join(" ")).toContain("--experimental-strip-types");
   });
@@ -226,6 +236,36 @@ function localHarness({ fix = true, approve = true }: { fix?: boolean; approve?:
 }
 
 describe("local fixture benchmark", () => {
+  it.skipIf(process.platform === "win32").each([
+    ["python", "def decode(draft_tokens, target_tokens, eos=0):\n    result = []\n    for token in target_tokens:\n        if token == eos:\n            break\n        result.append(token)\n    return result\n"],
+    ["rust", "pub fn encode(seq: u16, payload: &[u8], out: &mut [u8]) -> Result<usize, &'static str> {\n    if payload.len() > 255 || out.len() < 3 + payload.len() { return Err(\"Invalid size\"); }\n    let bytes = seq.to_le_bytes();\n    out[0] = bytes[0]; out[1] = bytes[1]; out[2] = payload.len() as u8;\n    out[3..3 + payload.len()].copy_from_slice(payload);\n    Ok(3 + payload.len())\n}\n"],
+  ] as const)("accepts fixed %s through actual LocalExecutor trusted-marker verification", async (runtime, fixedSource) => {
+    const seed = fixture.tasks.find((candidate) => candidate.fixture.runtime === runtime)!;
+    const [path] = Object.keys(seed.fixture.files);
+    const bin = await mkdtemp(join(tmpdir(), "elevate-test-cli-"));
+    await writeFile(join(bin, "copilot"), `#!${process.execPath}\nimport { writeFileSync } from 'node:fs';\nwriteFileSync(${JSON.stringify(path)}, ${JSON.stringify(fixedSource)});\n`, { mode: 0o755 });
+    vi.stubEnv("PATH", `${bin}${delimiter}${process.env.PATH ?? ""}`);
+    const llm = new FakeLLM()
+      .on("plan", () => ({
+        summary: seed.title, acceptanceCriteria: seed.acceptanceCriteria, verification: seed.verification,
+        subtasks: [{ key: "fix", title: seed.title, instructions: seed.instructions, files: seed.touchpoints, dependsOn: [] }],
+      }))
+      .on("review", () => ({ approve: true, summary: "Test-only review of verified fixture", issues: [] }));
+    try {
+      const result = await runLocalBenchTask(seed, 1, { ...options, executor: "local" }, {
+        llm, createExecutor: (executorOptions) => new LocalExecutor("copilot", executorOptions),
+      });
+      expect(result.error).toBeNull();
+      expect(result).toMatchObject({ success: true, testsPassed: true, failureStage: null, tokens: null, costUsd: null });
+      expect(result.verification?.output.split(/\r?\n/)).toContain(fixtureVerification(seed).successMarker);
+      expect(result.draftPayload).not.toBeNull();
+      expect(llm.calls.map((call) => call.task)).toEqual(["plan", "review"]);
+    } finally {
+      vi.unstubAllEnvs();
+      await rm(bin, { recursive: true, force: true });
+    }
+  });
+
   it("plans and reviews with the selected model, runs immutable acceptance tests and captures only an in-memory draft", async () => {
     const hooks = localHarness();
     const result = await runLocalBenchTask(task, 1, { ...options, executor: "local" }, hooks);

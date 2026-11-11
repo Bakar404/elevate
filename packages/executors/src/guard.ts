@@ -2,6 +2,7 @@ import type { SwarmBudget } from "@elevate/db";
 import {
   assignCopilotAgent,
   commentOnIssue,
+  copilotWorkStatus,
   createIssue,
   findLinkedPullRequests,
   openDraftPullRequest,
@@ -9,13 +10,18 @@ import {
 } from "@elevate/github";
 import { authorizeWrite, WriteRefused, type Status, type Usage, type WriteAction } from "@elevate/policy";
 
+/** Where a cloud coding agent is on its pull request. */
+export type AgentWork = "working" | "finished" | "failed";
+
 /** The raw GitHub writes an executor may need. Implemented by Octokit in production and by a fake in tests. */
 export interface GitHubWriter {
   createIssue(fullName: string, title: string, body: string, labels?: string[]): Promise<{ number: number; url: string }>;
   comment(fullName: string, issue: number, body: string): Promise<string>;
-  assignAgent(fullName: string, issue: number, opts: { baseBranch?: string; instructions?: string }): Promise<void>;
+  assignAgent(fullName: string, issue: number, opts: { baseBranch?: string; instructions?: string; model?: string }): Promise<void>;
   openDraftPr(fullName: string, opts: { head: string; base: string; title: string; body: string }): Promise<{ url: string; number: number }>;
   linkedPrs(fullName: string, issue: number): Promise<{ url: string; number: number; draft: boolean; state: string }[]>;
+  /** Read-only: whether the Copilot coding agent is still working on a PR. */
+  agentWork(fullName: string, pr: number): Promise<AgentWork>;
 }
 
 export function octokitWriter(gh: Octokit): GitHubWriter {
@@ -25,6 +31,7 @@ export function octokitWriter(gh: Octokit): GitHubWriter {
     assignAgent: (f, i, o) => assignCopilotAgent(gh, f, i, o),
     openDraftPr: (f, o) => openDraftPullRequest(gh, f, o),
     linkedPrs: (f, i) => findLinkedPullRequests(gh, f, i),
+    agentWork: (f, p) => copilotWorkStatus(gh, f, p),
   };
 }
 
@@ -107,5 +114,6 @@ export function guardedGitHub(raw: GitHubWriter, opts: GuardOptions): GuardedGit
       return raw.openDraftPr(fullName, { head: o.head, base: o.base, title: o.title, body: o.body });
     },
     linkedPrs: (fullName, issue) => raw.linkedPrs(fullName, issue),
+    agentWork: (fullName, pr) => raw.agentWork(fullName, pr),
   };
 }

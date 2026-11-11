@@ -10,7 +10,7 @@ import { Badge, Button, Card } from "./ui";
 type Settings = {
   demo: boolean;
   model: { provider: string; model: string; baseUrl: string; hasApiKey: boolean };
-  models: { pipeline: string; chat: string };
+  models: { pipeline: string; chat: string; codingAgent: string };
   github: { connected: boolean; login: string | null; source: string; error?: string };
   executor: string;
   thresholds: { legitimacy: number; priorFloor: number; soundness: number };
@@ -99,6 +99,16 @@ export function SettingsForm() {
               onChange={(id) => setS({ ...s, models: { ...s.models, chat: id } })}
             />
           </div>
+          <div className="grid gap-1.5 text-xs text-faint" data-testid="coding-agent-model">
+            <span>Swarms: Copilot coding agent</span>
+            <ModelPicker
+              label="Coding agent model"
+              value={s.models.codingAgent}
+              models={listed}
+              defaultLabel="Auto (GitHub picks)"
+              onChange={(id) => setS({ ...s, models: { ...s.models, codingAgent: id } })}
+            />
+          </div>
           {catalog?.error && s.model.provider === "copilot" && (
             <p className="text-xs text-danger sm:col-span-2">Couldn't list Copilot models ({catalog.error}). You can still type a model id.</p>
           )}
@@ -128,7 +138,7 @@ export function SettingsForm() {
             variant="primary"
             onClick={() => {
               save(
-                { model: { provider: s.model.provider, model: s.model.model, baseUrl: s.model.baseUrl }, models: { chat: s.models.chat }, ...(apiKey ? { apiKey } : {}) },
+                { model: { provider: s.model.provider, model: s.model.model, baseUrl: s.model.baseUrl }, models: { chat: s.models.chat, codingAgent: s.models.codingAgent }, ...(apiKey ? { apiKey } : {}) },
                 "Models saved",
               ).then(refreshModels, () => {});
               setApiKey("");

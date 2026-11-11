@@ -1,4 +1,4 @@
-import type { GitHubWriter } from "./guard";
+import type { AgentWork, GitHubWriter } from "./guard";
 import { topoOrder, issueBody, type Executor, type SwarmOutcome, type SwarmRun } from "./types";
 
 export type FakeWrite = { op: keyof GitHubWriter; fullName: string; detail: Record<string, unknown> };
@@ -18,11 +18,16 @@ export class FakeGitHub implements GitHubWriter {
     this.writes.push({ op: "comment", fullName, detail: { issue, body } });
     return `https://github.com/${fullName}/issues/${issue}#comment-${++this.n}`;
   }
-  async assignAgent(fullName: string, issue: number) {
-    this.writes.push({ op: "assignAgent", fullName, detail: { issue } });
+  async assignAgent(fullName: string, issue: number, o: { model?: string } = {}) {
+    this.writes.push({ op: "assignAgent", fullName, detail: { issue, ...(o.model ? { model: o.model } : {}) } });
     // The "agent" answers with a linked draft PR.
     const number = ++this.n;
     this.prs.set(issue, [{ url: `https://github.com/${fullName}/pull/${number}`, number, draft: true, state: "open" }]);
+  }
+  /** Scripted answers for agentWork, consumed one per poll; empty means the agent is done. */
+  agentStates: AgentWork[] = [];
+  async agentWork(_fullName: string, _pr: number): Promise<AgentWork> {
+    return this.agentStates.shift() ?? "finished";
   }
   async openDraftPr(fullName: string, o: { head: string; base: string; title: string }) {
     const number = ++this.n;

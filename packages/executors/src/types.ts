@@ -40,6 +40,8 @@ export type SwarmOutcome = {
   prUrl?: string;
   issueUrl?: string;
   summary: string;
+  /** Models the executor used, for the swarm record (e.g. { codingAgent: "auto" }). */
+  models?: Record<string, string>;
 };
 
 export interface Executor {

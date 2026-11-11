@@ -18,10 +18,10 @@ export const EXECUTORS: { kind: ExecutorKind; label: string; description: string
   { kind: "fake", label: "Simulation", description: "Walks the plan without agents. For demos and tests." },
 ];
 
-export function getExecutor(kind: ExecutorKind): Executor {
+export function getExecutor(kind: ExecutorKind, opts: { codingAgentModel?: string } = {}): Executor {
   switch (kind) {
     case "copilot-cloud":
-      return new CopilotCloudExecutor();
+      return new CopilotCloudExecutor({ model: opts.codingAgentModel });
     case "claude-action":
       return new MentionExecutor("claude-action", "Claude Code", "@claude");
     case "codex-cloud":

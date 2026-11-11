@@ -12,7 +12,7 @@ export type ModelOption = {
   vendor?: string;
   enabled: boolean;
 };
-export type ModelsResponse = { provider: string; models: ModelOption[]; error?: string; prefs: { pipeline: string; chat: string } };
+export type ModelsResponse = { provider: string; models: ModelOption[]; error?: string; prefs: { pipeline: string; chat: string; codingAgent: string } };
 
 let pending: Promise<ModelsResponse> | null = null;
 
@@ -23,7 +23,7 @@ export function useModels() {
     if (fresh || !pending)
       pending = fetch("/api/models")
         .then((r) => r.json() as Promise<ModelsResponse>)
-        .catch(() => ({ provider: "copilot", models: [], prefs: { pipeline: "", chat: "" }, error: "Could not load models" }));
+        .catch(() => ({ provider: "copilot", models: [], prefs: { pipeline: "", chat: "", codingAgent: "" }, error: "Could not load models" }));
     pending.then(setData);
   };
   useEffect(() => load(), []);

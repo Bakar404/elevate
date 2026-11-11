@@ -30,22 +30,53 @@ async function waitForPr(run: SwarmRun, issue: number, label: string): Promise<s
 export class CopilotCloudExecutor implements Executor {
   readonly kind = "copilot-cloud" as const;
   readonly label = "GitHub Copilot coding agent";
+  /** model: the coding agent's model id; omitted means GitHub's auto selection. */
+  constructor(private readonly opts: { model?: string } = {}) {}
 
   async run(run: SwarmRun): Promise<SwarmOutcome> {
     const { github, repo } = run;
+    const model = this.opts.model || undefined;
+    const codingAgent = model ?? "auto (GitHub picks the model)";
     const issue = await github.createIssue(repo.fullName, run.recommendation.title, issueBody(run), ["elevate"]);
     await run.log(`Opened ${issue.url}`);
     for (const t of run.plan.tasks) await run.setTask(t.key, "running");
     await github.assignAgent(repo.fullName, issue.number, {
       baseBranch: repo.defaultBranch,
       instructions: `Implement the plan in the issue on a new branch and open a draft pull request. ${run.plan.verification}`,
+      ...(model ? { model } : {}),
     });
     github.turn();
-    await run.log("Assigned to the Copilot coding agent; waiting for its pull request");
+    await run.log(`Assigned to the Copilot coding agent (model: ${codingAgent}); waiting for its pull request`);
     const prUrl = await waitForPr(run, issue.number, "Copilot");
-    for (const t of run.plan.tasks) await run.setTask(t.key, prUrl ? "done" : "failed");
-    if (!prUrl) throw new Error(`No pull request linked to ${issue.url} within the time budget`);
-    return { prUrl, issueUrl: issue.url, summary: "Copilot coding agent opened a pull request" };
+    if (!prUrl) {
+      for (const t of run.plan.tasks) await run.setTask(t.key, "failed");
+      throw new Error(`No pull request linked to ${issue.url} within the time budget`);
+    }
+
+    // The agent opens a "[WIP]" draft right away; the work is only done when it says so.
+    for (const t of run.plan.tasks) if (t.role === "planner") await run.setTask(t.key, "done");
+    await run.log(`Copilot opened ${prUrl} and is working on it`);
+    const work = await waitForAgent(run, Number(prUrl.split("/").pop()));
+    for (const t of run.plan.tasks) if (t.role !== "planner") await run.setTask(t.key, work === "finished" ? "done" : "failed");
+    if (work !== "finished") {
+      throw new Error(
+        work === "failed"
+          ? `The Copilot coding agent did not finish: its session on ${prUrl} failed`
+          : `The Copilot coding agent did not finish ${prUrl} within the time budget`,
+      );
+    }
+    return { prUrl, issueUrl: issue.url, summary: "Copilot coding agent finished a draft pull request", models: { codingAgent } };
+  }
+}
+
+/** Poll until the coding agent finishes or fails, within the swarm's time budget. */
+async function waitForAgent(run: SwarmRun, pr: number): Promise<"finished" | "failed" | "timeout"> {
+  const pollMs = run.pollMs ?? 30_000;
+  for (;;) {
+    const s = await run.github.agentWork(run.repo.fullName, pr);
+    if (s !== "working") return s;
+    if (run.github.usage().minutes >= run.budgetMinutes) return "timeout";
+    await sleep(pollMs, run.signal);
   }
 }
 

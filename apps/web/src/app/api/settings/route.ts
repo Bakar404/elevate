@@ -35,7 +35,7 @@ export const GET = route(async (ctx) => {
 
 const Put = z.object({
   model: z.object({ provider: z.enum(["copilot", "anthropic", "openai", "azure"]), model: z.string().max(100), baseUrl: z.string().max(300) }).partial().optional(),
-  models: z.object({ pipeline: z.string().max(100), chat: z.string().max(100) }).partial().optional(),
+  models: z.object({ pipeline: z.string().max(100), chat: z.string().max(100), codingAgent: z.string().max(100) }).partial().optional(),
   apiKey: z.string().max(500).nullable().optional(),
   githubToken: z.string().max(500).nullable().optional(),
   executor: z.enum(["copilot-cloud", "claude-action", "codex-cloud", "local", "fake"]).optional(),

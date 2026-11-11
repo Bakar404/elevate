@@ -37,22 +37,32 @@ export async function availableModels(ctx: Ctx): Promise<{ provider: ModelConfig
   }
 }
 
+/** Human label for the background model, e.g. "copilot/claude-opus-5.5". */
+export async function modelLabel(ctx: Ctx): Promise<string> {
+  const c = await resolveModelConfig(ctx.db);
+  return `${c.provider}/${c.model || "default"}`;
+}
+
 export type ModelPrefs = {
   /** Background work: triage, profiling, both gates, swarm planning. Empty = provider default. */
   pipeline: string;
   /** Default for new chats. Empty = same as pipeline. */
   chat: string;
+  /** The Copilot coding agent that writes swarm PRs. Empty = GitHub's auto selection. */
+  codingAgent: string;
 };
 
 export async function modelPrefs(ctx: Ctx): Promise<ModelPrefs> {
   const base = await getSetting<{ model?: string }>(ctx.db, "model", {});
   const chat = await getSetting<string>(ctx.db, "model.chat", "");
-  return { pipeline: base.model ?? "", chat };
+  const codingAgent = await getSetting<string>(ctx.db, "model.codingAgent", process.env.ELEVATE_CODING_AGENT_MODEL ?? "");
+  return { pipeline: base.model ?? "", chat, codingAgent };
 }
 
 export async function setModelPrefs(ctx: Ctx, p: Partial<ModelPrefs>) {
   if (p.pipeline !== undefined) await setSetting(ctx.db, "model", { ...(await getSetting(ctx.db, "model", {})), model: p.pipeline });
   if (p.chat !== undefined) await setSetting(ctx.db, "model.chat", p.chat);
+  if (p.codingAgent !== undefined) await setSetting(ctx.db, "model.codingAgent", p.codingAgent);
 }
 
 /** thread's own pick → chat default → pipeline model → provider default. */

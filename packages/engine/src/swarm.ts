@@ -19,6 +19,7 @@ import type { Status } from "@elevate/policy";
 import type { Ctx } from "./context";
 import { slugify } from "./ingest";
 import { applyEvent } from "./lifecycle";
+import { modelLabel, modelPrefs } from "./models";
 import { PLAN_SYSTEM, PlanSchema } from "./prompts";
 
 export const DEFAULT_BUDGET: SwarmBudget = { maxTasks: 6, maxMinutes: 90, maxAgentTurns: 40 };
@@ -135,7 +136,9 @@ export async function runSwarm(ctx: Ctx, swarmId: string, opts: { pollMs?: numbe
   controllers.set(swarmId, controller);
 
   try {
-    await log(`Planning "${rec.title}" for ${repo.fullName}`);
+    const prefs = await modelPrefs(ctx);
+    const planner = ctx.demo ? "demo" : await modelLabel(ctx);
+    await log(`Planning "${rec.title}" for ${repo.fullName} with ${planner}`);
     const p = await ctx.llm.json({
       task: "plan",
       system: PLAN_SYSTEM,
@@ -173,7 +176,7 @@ export async function runSwarm(ctx: Ctx, swarmId: string, opts: { pollMs?: numbe
       audit: (action, target, details) => audit(ctx.db, `swarm:${swarmId}`, `github.${action}`, target, details, swarm.tenantId),
     });
 
-    const outcome = await getExecutor(swarm.executor).run({
+    const outcome = await getExecutor(swarm.executor, { codingAgentModel: prefs.codingAgent }).run({
       swarmId,
       repo: { fullName: repo.fullName, defaultBranch: repo.defaultBranch },
       recommendation: { id: rec.id, title: rec.title, rationale: rec.hypothesis.rationale, expectedImpact: rec.hypothesis.expectedImpact },
@@ -206,7 +209,13 @@ export async function runSwarm(ctx: Ctx, swarmId: string, opts: { pollMs?: numbe
       .where(and(eq(swarmTasks.swarmId, swarmId), inArray(swarmTasks.status, ["pending", "running"])));
     await ctx.db
       .update(swarms)
-      .set({ status: "succeeded", prUrl: outcome.prUrl, issueUrl: outcome.issueUrl ?? null, result: { summary: outcome.summary, usage: github.usage() }, finishedAt: new Date() })
+      .set({
+        status: "succeeded",
+        prUrl: outcome.prUrl,
+        issueUrl: outcome.issueUrl ?? null,
+        result: { summary: outcome.summary, usage: github.usage(), models: { planner, ...outcome.models } },
+        finishedAt: new Date(),
+      })
       .where(eq(swarms.id, swarmId));
     await applyEvent(ctx.db, rec.id, "pr", {}, `swarm:${swarmId}`);
     await log(`Draft PR ready: ${outcome.prUrl}`, "success");

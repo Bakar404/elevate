@@ -33,8 +33,8 @@ Every table has a `tenant_id`, which is `local` for now.
 
 | Job | Does | Then |
 |---|---|---|
-| `repos.sync` | List your repos (scheduled every 6 hours) | `repo.profile` for watched repos |
-| `repo.profile` | Read the README, manifests and tree; model writes the profile; embed it | `repo.match` |
+| `repos.sync` | List your repos (every 5 minutes; `ELEVATE_SYNC_MINUTES`). For repos whose `pushed_at` moved, read the default-branch head SHA | `repo.profile` for watched repos whose head differs from the profiled commit |
+| `repo.profile` | Read the README, manifests and tree at the head commit; model writes the profile; embed it; store `profiled_sha` | `repo.match` |
 | `sources.sweep` | Every hour, fan out to each enabled source | `source.fetch` |
 | `source.fetch` | Fetch and dedupe items | `items.triage` |
 | `items.triage` | Model keeps engineering-relevant items and extracts techniques; near-duplicates (cosine ≥ 0.82) merge | `technique.legitimacy` |
@@ -54,10 +54,10 @@ When you approve, you choose an executor. Approval adds `approve` to the history
 1. A planner call turns the recommendation into acceptance criteria and subtasks with dependencies. Two tasks are always added: `plan` first, and `review` last.
 2. The executor runs the tasks:
    - **Cloud**:
-     - `copilot-cloud` opens an issue and assigns it to Copilot's coding agent.
+     - `copilot-cloud` opens an issue and assigns it to Copilot's coding agent, using the model picked under Settings → "Swarms: Copilot coding agent" (`ELEVATE_CODING_AGENT_MODEL`; empty lets GitHub choose). The agent opens a `[WIP]` draft PR within seconds, so elevate keeps the swarm running until the PR timeline shows `copilot_work_finished` (or a failure), within the swarm's time budget.
      - `claude-action` opens an issue that mentions `@claude`, for the Claude Code Action.
      - `codex-cloud` opens an issue that mentions `@codex`.
-     - Each agent opens the PR itself; elevate polls for it.
+     - Each agent opens the PR itself; elevate polls for it. The swarm's result records the planner model and the coding-agent model.
    - **Local** creates a git worktree on a `elevate/<id>` branch and runs `copilot`, `claude` or `codex` non-interactively, one task at a time in dependency order. It then commits, pushes and opens a draft PR.
    - **Fake** is used in the demo and tests. It walks the same DAG and writes through the same guard to a fake GitHub.
 3. Every write goes through `guardedGitHub`, which asks the proved `authorizeWrite` first and records the result in the audit log. Refusals throw `WriteRefused`.

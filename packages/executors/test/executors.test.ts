@@ -1,3 +1,4 @@
+import { copilotWorkFromEvents } from "@elevate/github";
 import { WriteRefused, type WriteAction } from "@elevate/policy";
 import { describe, expect, it } from "vitest";
 import {
@@ -116,6 +117,46 @@ describe("cloud executors", () => {
     const out = await new CopilotCloudExecutor().run(run);
     expect(fake.writes.map((w) => w.op)).toEqual(["createIssue", "assignAgent"]);
     expect(out.prUrl).toContain("/pull/");
+  });
+
+  it("Copilot: waits for the agent to finish its work, not just for the WIP PR to appear", async () => {
+    const { fake, run, tasks } = setup({ status: "in_progress", allowSwarm: true });
+    fake.agentStates = ["working", "working", "finished"];
+    const seen: string[] = [];
+    run.setTask = async (k, s) => {
+      tasks[k] = s;
+      seen.push(`${k}:${s}`);
+    };
+    await new CopilotCloudExecutor().run(run);
+    expect(fake.agentStates).toEqual([]);
+    expect(tasks.impl).toBe("done");
+    expect(seen.indexOf("impl:done")).toBeGreaterThan(seen.indexOf("plan:done"));
+  });
+
+  it("Copilot: fails the swarm when the agent reports a failed session", async () => {
+    const { fake, run, tasks } = setup({ status: "in_progress", allowSwarm: true });
+    fake.agentStates = ["working", "failed"];
+    await expect(new CopilotCloudExecutor().run(run)).rejects.toThrow(/did not finish/);
+    expect(tasks.impl).toBe("failed");
+  });
+
+  it("Copilot: passes the configured coding-agent model and reports it", async () => {
+    const { fake, run } = setup({ status: "in_progress", allowSwarm: true });
+    const out = await new CopilotCloudExecutor({ model: "claude-sonnet-5.5" }).run(run);
+    expect(fake.writes[1]!.detail).toMatchObject({ model: "claude-sonnet-5.5" });
+    expect(out.models).toMatchObject({ codingAgent: "claude-sonnet-5.5" });
+    const auto = await new CopilotCloudExecutor().run(setup({ status: "in_progress", allowSwarm: true }).run);
+    expect(auto.models?.codingAgent).toMatch(/auto/);
+  });
+});
+
+describe("copilotWorkFromEvents", () => {
+  it("reads the PR timeline: working until a finished event, failed on a failure event", () => {
+    expect(copilotWorkFromEvents(["assigned", "committed"])).toBe("working");
+    expect(copilotWorkFromEvents(["copilot_work_started", "committed"])).toBe("working");
+    expect(copilotWorkFromEvents(["copilot_work_started", "copilot_work_finished"])).toBe("finished");
+    expect(copilotWorkFromEvents(["copilot_work_started", "copilot_work_finished_failure"])).toBe("failed");
+    expect(copilotWorkFromEvents(["copilot_work_started", "copilot_work_finished", "copilot_work_started"])).toBe("working");
   });
 });
 

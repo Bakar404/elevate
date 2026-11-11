@@ -23,7 +23,7 @@ export async function assignCopilotAgent(
   gh: Octokit,
   fullName: string,
   issue: number,
-  opts: { baseBranch?: string; instructions?: string } = {},
+  opts: { baseBranch?: string; instructions?: string; model?: string } = {},
 ) {
   try {
     await gh.request("POST /repos/{owner}/{repo}/issues/{issue_number}/assignees", {
@@ -34,6 +34,7 @@ export async function assignCopilotAgent(
         target_repo: fullName,
         base_branch: opts.baseBranch,
         custom_instructions: opts.instructions ?? "",
+        ...(opts.model ? { model: opts.model } : {}),
       },
     } as never);
     const check = await gh.issues.get({ ...split(fullName), issue_number: issue });
@@ -59,6 +60,22 @@ export async function assignCopilotAgent(
     `mutation($a:ID!,$ids:[ID!]!){ replaceActorsForAssignable(input:{assignableId:$a, actorIds:$ids}){ clientMutationId } }`,
     { a: q.repository.issue.id, ids: [bot.id] },
   );
+}
+
+/**
+ * Whether the Copilot coding agent is still working on a PR. It opens a "[WIP]" draft within
+ * seconds, then posts copilot_work_started / copilot_work_finished(_failure) timeline events.
+ */
+export async function copilotWorkStatus(gh: Octokit, fullName: string, pr: number): Promise<"working" | "finished" | "failed"> {
+  const events = await gh.paginate(gh.issues.listEventsForTimeline, { ...split(fullName), issue_number: pr, per_page: 100 });
+  return copilotWorkFromEvents(events.map((e) => (e as { event?: string }).event ?? ""));
+}
+
+/** The latest copilot_work_* event decides; no event yet means the agent hasn't finished. */
+export function copilotWorkFromEvents(events: string[]): "working" | "finished" | "failed" {
+  const last = events.filter((e) => e.startsWith("copilot_work_")).at(-1);
+  if (!last || last === "copilot_work_started") return "working";
+  return /fail|error|cancel|timed_out/.test(last) ? "failed" : "finished";
 }
 
 /** Find PRs that reference an issue (Copilot agent / Actions-based agents link back). */

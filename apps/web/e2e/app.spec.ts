@@ -201,7 +201,22 @@ test("swarm PRs are published as you by default, and that can be turned off", as
 test.describe("on a phone", () => {
   test.use({ viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true });
 
-  const overflow = (page: Page) => page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth);
+  /** "" when the page fits; otherwise the overflow and the elements sticking out, so a failure names the culprit. */
+  const overflow = (page: Page) =>
+    page.evaluate(() => {
+      const W = document.documentElement.clientWidth;
+      const over = document.documentElement.scrollWidth - W;
+      if (over <= 0) return "";
+      const clipped = (el: Element) => {
+        for (let a = el.parentElement; a; a = a.parentElement) if (getComputedStyle(a).overflowX !== "visible") return true;
+        return false;
+      };
+      const out = [...document.querySelectorAll("body *")]
+        .filter((el) => el.getBoundingClientRect().right > W + 0.5 && !clipped(el))
+        .slice(0, 5)
+        .map((el) => `<${el.tagName.toLowerCase()} class="${String(el.className).slice(0, 80)}"> "${(el.textContent ?? "").trim().slice(0, 40)}"`);
+      return `${over}px wider than the screen: ${out.join(" | ")}`;
+    });
 
   test("pages fit the screen and the tab bar replaces the sidebar", async ({ page }) => {
     await waitForOpenRecs(page);
@@ -213,11 +228,12 @@ test.describe("on a phone", () => {
       await tabs.getByRole("link", { name }).click();
       await expect(page).toHaveURL(url);
       await expect(tabs.getByRole("link", { name })).toHaveAttribute("aria-current", "page");
-      expect(await overflow(page)).toBeLessThanOrEqual(0);
+      expect(await overflow(page)).toBe("");
     }
     await page.getByTestId("rec-card").first().click();
     await expect(page).toHaveURL(/\/r\//);
-    expect(await overflow(page)).toBeLessThanOrEqual(0);
+    await expect(page.getByRole("heading", { level: 1 })).toBeVisible();
+    expect(await overflow(page)).toBe("");
   });
 
   test("chat history opens in a drawer", async ({ page }) => {

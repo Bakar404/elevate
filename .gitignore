@@ -15,3 +15,6 @@ next-env.d.ts
 *.tsbuildinfo
 proof/results/logs/
 proof/verified/target/
+
+# Copied from docs/images by the Pages workflow
+site/images/

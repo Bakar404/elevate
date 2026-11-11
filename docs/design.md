@@ -26,7 +26,8 @@ A calm, dark work surface over a living, dithered landscape. The background carr
 
 ## Tokens (`app/globals.css`, Tailwind v4 `@theme`)
 
-- **Surfaces:** `bg` → `panel` → `raised`, each a few steps of OKLCH lightness at hue 250. Borders are white at 8% (`line`) and 14% (`line-strong`).
+- **Surfaces:** `bg` → `panel` → `raised`, each a few steps of OKLCH lightness at hue 250. Borders use `ink` at 8% (`line`) and 14% (`line-strong`). `ink` is white in the dark theme and deep slate in the light one, so any `bg-ink/5`-style wash works in both.
+- **Themes:** dark and light. `:root.light` in `globals.css` overrides the same tokens, with accents deepened for contrast on white. The `elevate-theme` cookie is read on the server, so the first paint is right. Without a cookie, a boot script in `<head>` follows `prefers-color-scheme`. The sun/moon button in the sidebar and "Toggle light / dark theme" in ⌘K switch themes (`components/theme.tsx`), and Sonner follows the theme.
 - **Text:** `fg`, `muted` and `faint`. Body copy is never set below `muted`.
 - **Accents:** these reuse the background palette, so the UI and the landscape belong together.
 
@@ -72,7 +73,7 @@ A calm, dark work surface over a living, dithered landscape. The background carr
 
 ## Models and chat
 
-- The model picker is a popover with a cmdk list showing each model's cost ("included" or N×). Models your plan disables appear greyed out, and a "Use <id>" row accepts any id (needed for BYOK).
+- The model picker is a popover with a cmdk list showing GitHub's price for each model in $ per 1M tokens, input / output, as reported by the Copilot runtime. Models your plan disables appear greyed out, and a "Use <id>" row accepts any id (needed for BYOK).
 - Settings sets the background model and the chat default. The chat composer sets the model per conversation, and a change takes effect from the next message.
 - Deleting a conversation is a hover or focus trash button, followed by a confirmation dialog. It is removed optimistically and restored if the request fails.
 

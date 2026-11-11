@@ -1,0 +1,204 @@
+<!doctype html>
+<html lang="en" data-theme="dark">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>elevate · upgrades for your repos, verified before they ship</title>
+<meta name="description" content="elevate watches Hacker News, AI lab blogs and arXiv, checks whether a new technique is legit and whether it would measurably improve one of your GitHub repos, then sends an agent swarm to open a draft PR. Runs on your GitHub Copilot subscription.">
+<meta name="theme-color" content="#0d1015">
+<meta property="og:type" content="website">
+<meta property="og:title" content="elevate">
+<meta property="og:description" content="Upgrades for your repos, verified before they ship.">
+<meta property="og:image" content="https://bakar404.github.io/elevate/images/home-dark.png">
+<link rel="icon" href="images/logo.svg" type="image/svg+xml">
+<link rel="stylesheet" href="style.css">
+<script>
+  // Apply the saved theme before first paint; otherwise follow the system.
+  document.documentElement.classList.add("js");
+  try {
+    const saved = localStorage.getItem("elevate-site-theme");
+    const dark = saved ? saved === "dark" : matchMedia("(prefers-color-scheme: dark)").matches;
+    document.documentElement.dataset.theme = dark ? "dark" : "light";
+  } catch (e) {}
+</script>
+</head>
+<body>
+<a class="skip" href="#main">Skip to content</a>
+
+<header class="topbar">
+  <a class="brand" href="#top" aria-label="elevate home">
+    <img src="images/logo.svg" width="26" height="26" alt="">
+    <span>elevate</span>
+  </a>
+  <nav class="links" aria-label="Sections">
+    <a href="#how">How it works</a>
+    <a href="#swarm">Swarm</a>
+    <a href="#proof">Proof</a>
+    <a href="#models">Models</a>
+    <a href="#built-with">Built with</a>
+  </nav>
+  <div class="actions">
+    <button class="icon-btn" id="theme" type="button" aria-label="Switch theme" title="Toggle light / dark">
+      <svg class="i-sun" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/></svg>
+      <svg class="i-moon" viewBox="0 0 24 24" aria-hidden="true"><path d="M20.5 14.5A8.5 8.5 0 0 1 9.5 3.5a8.5 8.5 0 1 0 11 11Z"/></svg>
+    </button>
+    <a class="icon-btn gh" href="https://github.com/Bakar404/elevate" aria-label="elevate on GitHub" title="View the repository on GitHub">
+      <svg viewBox="0 0 16 16" aria-hidden="true"><path fill="currentColor" d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0 0 16 8c0-4.42-3.58-8-8-8Z"/></svg>
+      <span>GitHub</span>
+    </a>
+  </div>
+</header>
+
+<main id="main">
+  <section class="hero" id="top">
+    <canvas class="dither" aria-hidden="true"></canvas>
+    <div class="hero-fade" aria-hidden="true"></div>
+    <div class="hero-inner">
+      <p class="eyebrow">Runs on your GitHub Copilot subscription</p>
+      <h1>Upgrades for your repos,<br><span class="grad">verified before they ship.</span></h1>
+      <p class="lede">New techniques land every week. elevate watches Hacker News, AI lab blogs and arXiv. It checks whether a new thing is legit, and whether it would measurably improve one of <em>your</em> repos. When you approve, it sends a swarm of agents to open a draft PR.</p>
+      <div class="cta">
+        <a class="btn primary" href="https://github.com/Bakar404/elevate#quick-start">Get started</a>
+        <a class="btn" href="#how">See how it decides</a>
+      </div>
+    </div>
+  </section>
+
+  <section class="shot-wrap reveal" aria-label="Product screenshot">
+    <figure class="frame">
+      <div class="chrome" aria-hidden="true"><i></i><i></i><i></i><span>localhost:3100</span></div>
+      <img class="only-dark" src="images/home-dark.png" width="1440" height="900" alt="elevate home: a live map of watched repos, incoming techniques and the recommendation inbox">
+      <img class="only-light" src="images/home-light.png" width="1440" height="900" alt="elevate home: a live map of watched repos, incoming techniques and the recommendation inbox">
+    </figure>
+  </section>
+
+  <section class="gates reveal" aria-label="The two gates">
+    <article class="card spot">
+      <span class="tag sky">Gate 1</span>
+      <h3>Is the new thing actually legit?</h3>
+      <p>It checks source credibility, independent corroboration, community signal and public code, and gets a skeptical model review. Hype is kept, but hidden, along with the reasons it failed.</p>
+    </article>
+    <article class="card spot">
+      <span class="tag olive">Gate 2</span>
+      <h3>Will it make a real difference here?</h3>
+      <p>It checks fit with this repo's stack, the risk and the effort, and requires a concrete measure of impact. The recommendation spells out exactly how the swarm will prove it.</p>
+    </article>
+    <article class="card spot">
+      <span class="tag sand">You</span>
+      <h3>Nothing ships without you</h3>
+      <p>Only repos you opt in can be written to. Pull requests are drafts, and every swarm runs within a budget. elevate never merges and never pushes to a default branch.</p>
+    </article>
+  </section>
+
+  <section class="block reveal" id="how">
+    <header class="sec-head">
+      <p class="eyebrow">How it works</p>
+      <h2>From a headline to a draft PR, with evidence at every step.</h2>
+      <p>Feeds are the same for everyone. Searches built from each watched repo's profile, its stack and domains, go out to HN, arXiv and GitHub, so what elevate finds is relevant to the code you actually have.</p>
+    </header>
+    <img class="diagram only-dark" src="images/pipeline-dark.svg" width="1200" height="470" alt="Sources and your repos feed triage and profiles. A matcher pairs techniques with repos. Gate 1 checks legitimacy, Gate 2 checks soundness, and passing recommendations reach the inbox. When you approve, a swarm opens a draft PR.">
+    <img class="diagram only-light" src="images/pipeline-light.svg" width="1200" height="470" alt="Sources and your repos feed triage and profiles. A matcher pairs techniques with repos. Gate 1 checks legitimacy, Gate 2 checks soundness, and passing recommendations reach the inbox. When you approve, a swarm opens a draft PR.">
+    <div class="duo">
+      <figure class="frame small">
+        <img class="only-dark" src="images/recommendation-dark.png" width="1440" height="900" alt="A recommendation with evidence for both gates" loading="lazy">
+        <img class="only-light" src="images/recommendation-light.png" width="1440" height="900" alt="A recommendation with evidence for both gates" loading="lazy">
+        <figcaption><b>Recommendation.</b> Evidence for both gates, the expected impact, and how it will be measured.</figcaption>
+      </figure>
+      <figure class="frame small">
+        <img class="only-dark" src="images/radar-dark.png" width="1440" height="900" alt="The Radar of incoming techniques" loading="lazy">
+        <img class="only-light" src="images/radar-light.png" width="1440" height="900" alt="The Radar of incoming techniques" loading="lazy">
+        <figcaption><b>Radar.</b> Every technique seen, with its verdict and the repos it matched.</figcaption>
+      </figure>
+    </div>
+  </section>
+
+  <section class="block reveal" id="swarm">
+    <header class="sec-head">
+      <p class="eyebrow">Swarm</p>
+      <h2>Approve once. A team of agents does the work.</h2>
+      <p>A planner reads the repo profile and fans the work out to implementers. A tester runs the before/after measure from Gate 2, and a skeptical reviewer on a second model checks the diff. Only then does a guarded publisher open the draft PR.</p>
+    </header>
+    <img class="diagram only-dark" src="images/swarm-dark.svg" width="1200" height="300" alt="Planner fans out to implementers, then tester, reviewer and publisher, which opens a draft PR" loading="lazy">
+    <img class="diagram only-light" src="images/swarm-light.svg" width="1200" height="300" alt="Planner fans out to implementers, then tester, reviewer and publisher, which opens a draft PR" loading="lazy">
+    <figure class="frame">
+      <img class="only-dark" src="images/swarm-dark.png" width="1440" height="900" alt="A swarm running plan, implement, test and review with a live budget" loading="lazy">
+      <img class="only-light" src="images/swarm-light.png" width="1440" height="900" alt="A swarm running plan, implement, test and review with a live budget" loading="lazy">
+      <figcaption><b>Live swarm.</b> Task graph, budget and audit trail. It runs on the Copilot coding agent, Claude (GitHub Action), Codex cloud, or local CLIs in git worktrees.</figcaption>
+    </figure>
+  </section>
+
+  <section class="block reveal" id="proof">
+    <header class="sec-head">
+      <p class="eyebrow">Built proof-first</p>
+      <h2>The rules between a headline and your repo are proved, not just tested.</h2>
+      <p>The gate decisions, the recommendation lifecycle and the write guard are specified and proved in Verus, following the PDD Kit method. One bug is planted per clause, and Verus must reject each one. The TypeScript the app runs is diff-tested against the proved code built to WASM, and a negative control shows that test can fail.</p>
+    </header>
+    <img class="diagram only-dark" src="images/proof-dark.svg" width="1200" height="210" alt="Intent, Verus spec and proof, mutation check, differential test against WASM, receipt" loading="lazy">
+    <img class="diagram only-light" src="images/proof-light.svg" width="1200" height="210" alt="Intent, Verus spec and proof, mutation check, differential test against WASM, receipt" loading="lazy">
+    <div class="stats">
+      <div class="stat"><span class="n" data-count="26" data-dec="0">26</span><span class="l">requirements, proved in Verus</span></div>
+      <div class="stat"><span class="n" data-count="1" data-dec="2">1.00</span><span class="l">Gate 1 precision on the eval set</span></div>
+      <div class="stat"><span class="n" data-count="0.89" data-dec="2">0.89</span><span class="l">Gate 1 recall</span></div>
+      <div class="stat"><span class="n">0 / 7</span><span class="l">hype cases that got through</span></div>
+    </div>
+    <p class="fine">From the last live run of <code>pnpm eval:gates --live</code> on the Copilot default model. A proof can't cover the quality of the model's judgments, so the eval set measures that.</p>
+  </section>
+
+  <section class="block reveal" id="models">
+    <header class="sec-head">
+      <p class="eyebrow">Models</p>
+      <h2>Your Copilot plan, GitHub's prices, your choice of model.</h2>
+      <p>The model list comes live from your Copilot account. It shows GitHub's own price in US dollars per 1M input and output tokens, billed in <a href="https://docs.github.com/en/copilot/reference/copilot-billing/models-and-pricing">GitHub AI Credits</a>. Pick one model for the background agents and a default for chat, or switch models for each conversation. You can also bring your own key for Anthropic, OpenAI or Azure.</p>
+    </header>
+    <figure class="frame">
+      <img class="only-dark" src="images/chat-dark.png" width="1440" height="900" alt="Chat with the model picker open, listing GitHub prices per 1M tokens" loading="lazy">
+      <img class="only-light" src="images/chat-light.png" width="1440" height="900" alt="Chat with the model picker open, listing GitHub prices per 1M tokens" loading="lazy">
+      <figcaption><b>Chat.</b> Ask about your repos and the radar. The model picker shows the input / output price for each model.</figcaption>
+    </figure>
+  </section>
+
+  <section class="block reveal" id="built-with">
+    <header class="sec-head">
+      <p class="eyebrow">Built with</p>
+      <h2>Standing on great UI work.</h2>
+    </header>
+    <ul class="credits">
+      <li><a href="https://ui.aceternity.com/">Aceternity UI</a><span>Spotlight cards, hero effects</span></li>
+      <li><a href="https://21st.dev/">21st.dev</a><span>Component reference</span></li>
+      <li><a href="https://ui.shadcn.com/">shadcn/ui</a><span>Structure, tokens, look</span></li>
+      <li><a href="https://base-ui.com/">Base UI</a><span>Accessible primitives</span></li>
+      <li><a href="https://sonner.emilkowal.ski/">Sonner</a><span>Toasts</span></li>
+      <li><a href="https://github.com/dip/cmdk">cmdk</a><span>⌘K command palette</span></li>
+      <li><a href="https://number-flow.barvian.me/">NumberFlow</a><span>Animated numbers</span></li>
+      <li><a href="https://github.com/emilkowalski/skills">emilkowalski/skills</a><span>Motion guidelines</span></li>
+      <li><a href="https://www.beautifului.dev/">Beautiful UI</a><span>Layout reference</span></li>
+      <li><a href="https://rareui.in/">RareUI</a><span>Animated accents</span></li>
+      <li><a href="https://yappologistic.github.io/CUI/">CUI</a><span>Dithered background, site layout</span></li>
+      <li><a href="https://github.com/github/copilot-sdk">GitHub Copilot SDK</a><span>Agent runtime</span></li>
+      <li><a href="https://nextjs.org/">Next.js</a><span>App framework</span></li>
+      <li><a href="https://tailwindcss.com/">Tailwind CSS v4</a><span>Styling</span></li>
+      <li><a href="https://motion.dev/">Motion</a><span>Animation</span></li>
+      <li><a href="https://pglite.dev/">PGlite + pgvector</a><span>Local Postgres</span></li>
+      <li><a href="https://orm.drizzle.team/">Drizzle</a><span>ORM</span></li>
+      <li><a href="https://github.com/verus-lang/verus">Verus</a><span>Proofs</span></li>
+    </ul>
+  </section>
+
+  <section class="final reveal">
+    <h2>Try the demo in under a minute.</h2>
+    <pre><code>pnpm install
+ELEVATE_DEMO=1 pnpm dev   # http://localhost:3100</code></pre>
+    <a class="btn primary" href="https://github.com/Bakar404/elevate">View on GitHub</a>
+  </section>
+</main>
+
+<footer class="foot">
+  <span class="brand-sm"><img src="images/logo.svg" width="16" height="16" alt=""> elevate</span>
+  <span>Screenshots use the built-in demo repos.</span>
+  <a href="https://github.com/Bakar404/elevate">github.com/Bakar404/elevate</a>
+</footer>
+
+<script src="dither.js"></script>
+<script src="site.js"></script>
+</body>
+</html>

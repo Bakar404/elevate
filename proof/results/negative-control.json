@@ -1,5 +1,5 @@
 {
-	"wasm": "C:\\Users\\AABDEL~1\\AppData\\Local\\Temp\\elevate-pdd-target-negative\\wasm32-unknown-unknown\\release\\elevate_policy.wasm",
+	"wasm": "%TEMP%\\elevate-pdd-target-negative\\wasm32-unknown-unknown\\release\\elevate_policy.wasm",
 	"sections": [
 		{
 			"name": "legitimacy",

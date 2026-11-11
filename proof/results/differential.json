@@ -1,5 +1,5 @@
 {
-	"wasm": "C:\\Users\\aabdelsalam\\source\\elevate\\proof\\build\\elevate_policy.wasm",
+	"wasm": "proof/build/elevate_policy.wasm",
 	"sections": [
 		{
 			"name": "legitimacy",

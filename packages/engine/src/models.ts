@@ -3,12 +3,20 @@ import { eq, getSetting, setSetting, threads } from "@elevate/db";
 import type { Ctx } from "./context";
 import { resolveModelConfig } from "./context";
 
-/** Shown in demo mode so the pickers have something real-looking to choose from. */
+/**
+ * Demo mode has no Copilot session, so it lists real Copilot models at GitHub's published
+ * per-token prices (USD per 1M tokens, https://docs.github.com/en/copilot/reference/copilot-billing/models-and-pricing).
+ * With a Copilot login the live list and prices come from the runtime instead.
+ */
 export const DEMO_MODELS: ModelOption[] = [
-  { id: "gpt-5-mini", name: "GPT-5 mini", vendor: "openai", multiplier: 0, enabled: true },
-  { id: "claude-sonnet-4.5", name: "Claude Sonnet 4.5", vendor: "anthropic", multiplier: 1, enabled: true },
-  { id: "gpt-5", name: "GPT-5", vendor: "openai", multiplier: 1, enabled: true },
-  { id: "claude-opus-4.1", name: "Claude Opus 4.1", vendor: "anthropic", multiplier: 10, enabled: false },
+  { id: "auto", name: "Auto", discountPercent: 10, enabled: true },
+  { id: "gpt-6-luna", name: "GPT-6 Luna", vendor: "openai", price: { input: 0.1, output: 0.5, cachedInput: 0.01 }, enabled: true },
+  { id: "claude-haiku-5.5", name: "Claude Haiku 5.5", vendor: "anthropic", price: { input: 0.1, output: 0.5, cachedInput: 0.01 }, enabled: true },
+  { id: "gpt-6.1-terra", name: "GPT-6.1 Terra", vendor: "openai", price: { input: 1, output: 5, cachedInput: 0.05 }, enabled: true },
+  { id: "claude-sonnet-5.5", name: "Claude Sonnet 5.5", vendor: "anthropic", price: { input: 2, output: 10, cachedInput: 0.1 }, enabled: true },
+  { id: "gpt-6.1-sol", name: "GPT-6.1 Sol", vendor: "openai", price: { input: 2, output: 10, cachedInput: 0.1 }, enabled: true },
+  { id: "claude-opus-5.5", name: "Claude Opus 5.5", vendor: "anthropic", price: { input: 4, output: 20, cachedInput: 0.2 }, enabled: true },
+  { id: "gpt-6-astra", name: "GPT-6 Astra", vendor: "openai", price: { input: 10, output: 50, cachedInput: 1 }, enabled: true },
 ];
 
 const CACHE_MS = 10 * 60_000;

@@ -1,13 +1,78 @@
-# elevate
+<p align="center">
+  <img src="docs/images/logo.svg" width="56" height="56" alt="elevate logo">
+</p>
 
-New techniques ship every week: proof-driven development, speculative decoding, weight-space editing, the next thing on Hacker News. elevate watches those sources for you. When something new would make one of **your** GitHub repos better, it raises a recommendation. It raises one only after checking two things:
+<h1 align="center">elevate</h1>
 
-1. **Is the new thing actually legit?** It looks at source credibility, independent corroboration, community signal, public code, and a skeptical model review.
+<p align="center">
+  <b>New techniques ship every week. elevate tells you which ones would actually make <i>your</i> repos better, proves the rules it follows, and opens the draft PR.</b>
+</p>
+
+<p align="center">
+  <a href="https://bakar404.github.io/elevate/">Website</a> ·
+  <a href="#quick-start">Quick start</a> ·
+  <a href="#how-it-works">How it works</a> ·
+  <a href="#built-proof-first">Proof</a> ·
+  <a href="#built-with">Built with</a>
+</p>
+
+<picture>
+  <source media="(prefers-color-scheme: light)" srcset="docs/images/home-light.png">
+  <img src="docs/images/home-dark.png" alt="elevate home: a live map of watched repos, the techniques flowing into them, and the recommendation inbox">
+</picture>
+
+## What it does
+
+Proof-driven development, speculative decoding, weight-space editing, the next thing on Hacker News. elevate watches those sources for you. When something new would make one of your GitHub repos better, it raises a recommendation. It raises one only after checking two things:
+
+1. **Is the new thing actually legit?** It checks source credibility, independent corroboration, community signal, public code, and gets a skeptical model review.
 2. **Is the change sound for this repo, and will it make a measurable difference?** It checks fit with the repo, risk, and a concrete way to measure the impact.
 
 You approve, and elevate sends a swarm of agents that plan, implement, test and review the change, then open a **draft** PR. It never merges.
 
-The model runtime is the [GitHub Copilot SDK](https://github.com/github/copilot-sdk), so it runs on your Copilot subscription. Bring your own key to use Anthropic, OpenAI or Azure models. Swarms can run on the Copilot coding agent, Claude (GitHub Action), Codex cloud, or local `copilot` / `claude` / `codex` CLIs in git worktrees.
+The model runtime is the [GitHub Copilot SDK](https://github.com/github/copilot-sdk), so it runs on your Copilot subscription. You can bring your own key for Anthropic, OpenAI or Azure models. Swarms can run on:
+
+- the Copilot coding agent
+- Claude (GitHub Action)
+- Codex cloud
+- local `copilot` / `claude` / `codex` CLIs in git worktrees
+
+<table>
+  <tr>
+    <td width="50%">
+      <picture>
+        <source media="(prefers-color-scheme: light)" srcset="docs/images/recommendation-light.png">
+        <img src="docs/images/recommendation-dark.png" alt="A recommendation with evidence from both gates">
+      </picture>
+      <p align="center"><sub><b>Recommendation.</b> Evidence for both gates, the expected impact, and how it will be measured.</sub></p>
+    </td>
+    <td width="50%">
+      <picture>
+        <source media="(prefers-color-scheme: light)" srcset="docs/images/swarm-light.png">
+        <img src="docs/images/swarm-dark.png" alt="A swarm running plan, implement, test and review">
+      </picture>
+      <p align="center"><sub><b>Swarm.</b> Live task graph, budget and audit trail, ending in a draft PR.</sub></p>
+    </td>
+  </tr>
+  <tr>
+    <td width="50%">
+      <picture>
+        <source media="(prefers-color-scheme: light)" srcset="docs/images/radar-light.png">
+        <img src="docs/images/radar-dark.png" alt="The Radar of incoming techniques">
+      </picture>
+      <p align="center"><sub><b>Radar.</b> Every technique seen, with its gate verdict and the repos it matched.</sub></p>
+    </td>
+    <td width="50%">
+      <picture>
+        <source media="(prefers-color-scheme: light)" srcset="docs/images/chat-light.png">
+        <img src="docs/images/chat-dark.png" alt="Chat with the model picker showing GitHub prices">
+      </picture>
+      <p align="center"><sub><b>Chat.</b> Ask about your repos and the radar. Pick the model for each conversation.</sub></p>
+    </td>
+  </tr>
+</table>
+
+<sub>Screenshots use the built-in demo repos (<code>demo/ledger-api</code>, <code>demo/llm-router</code>, <code>demo/edge-firmware</code>). The app has a dark theme and a light theme. It follows your system setting until you pick one with the sun/moon button or ⌘K.</sub>
 
 ## Quick start
 
@@ -17,57 +82,85 @@ cp .env.example .env            # optional; everything has a default
 pnpm dev                        # http://localhost:3100
 ```
 
-- **Real mode:** sign in to GitHub with `gh auth login`, or paste a token in Settings. The model runs through your Copilot login. Turn on **Watch** for your repos and **Swarms** for the ones elevate may write to.
-- **Offline demo:** `ELEVATE_DEMO=1 pnpm dev`. This uses sample repos and sources, a deterministic model, and simulated swarms, with no GitHub access.
+- **Real mode:**
+  - Sign in to GitHub with `gh auth login`, or paste a token in Settings. The model runs through your Copilot login.
+  - Turn on **Watch** for your repos, and **Swarms** for the ones elevate may write to.
+- **Offline demo:** `ELEVATE_DEMO=1 pnpm dev` uses sample repos and sources, a deterministic model and simulated swarms. It doesn't touch GitHub.
+- **Docker:** `docker compose up --build` runs Postgres, the web app and a separate worker.
 - **Check the model runtime:** `pnpm smoke:copilot` makes one structured call through Copilot, or through your BYOK provider.
 
 ## How it works
 
-```
-sources (HN, AI lab blogs, arXiv) ─► triage ─► techniques ─► Gate 1: legitimacy
-                                                                  │ pass
-your repos ─► profiles + embeddings ─► matcher ─► candidates ─► Gate 2: soundness
-                                                                  │ pass
-                                             inbox ◄──────────────┘
-                                               │ you approve (and opt the repo in)
-                                     swarm: plan → implement → test → review ─► draft PR
-```
+<picture>
+  <source media="(prefers-color-scheme: light)" srcset="docs/images/pipeline-light.svg">
+  <img src="docs/images/pipeline-dark.svg" alt="Sources and your repos feed triage and profiles; a matcher pairs techniques with repos; Gate 1 checks legitimacy and Gate 2 checks soundness; passing recommendations reach the inbox; when you approve, a swarm opens a draft PR">
+</picture>
 
-Sources come in two kinds. **Feeds** (HN front page, lab blogs, arXiv listings) are the same for everyone. **Searches for your repos** query HN, arXiv and GitHub with terms taken from each watched repo's profile (its stack and domains, e.g. `pgvector`, `speculative decoding`). Every repo gets at least one query before shared terms fill the budget (`ELEVATE_FOCUS_QUERIES`, default 8). The home page and the Radar show those terms and which repos they serve. Anything found that way is matched to those repos first.
+Sources come in two kinds:
 
-**Models.** Settings has two pickers: one for the background agents (triage, the gates, swarm planning) and a default for chat. Each conversation can also pick its own model from the chat composer. For a reply, the conversation's model wins, then the chat default, then the background model, then the provider default. The list comes from your Copilot account (the cost multiplier is shown, and models your plan disables are greyed out). With a BYOK provider, type the model id. Conversations can be deleted from the chat list.
+- **Feeds** (the HN front page, lab blogs, arXiv listings) are the same for everyone.
+- **Searches for your repos** query HN, arXiv and GitHub with terms taken from each watched repo's profile: its stack and domains, such as `pgvector` or `speculative decoding`.
+  - Every repo gets at least one query before shared terms fill the budget (`ELEVATE_FOCUS_QUERIES`, default 8).
+  - Anything found that way is matched to those repos first.
+
+Techniques that fail a gate are kept, but hidden, along with the reasons they failed.
+
+An approved recommendation becomes a task graph:
+
+<picture>
+  <source media="(prefers-color-scheme: light)" srcset="docs/images/swarm-light.svg">
+  <img src="docs/images/swarm-dark.svg" alt="Planner fans out to implementers, then tester, reviewer and publisher, which opens a draft PR">
+</picture>
 
 See [docs/architecture.md](docs/architecture.md) for the packages, jobs and data model, and [docs/design.md](docs/design.md) for the UI.
+
+## Models and pricing
+
+Settings has two model pickers: one for the background agents (triage, the gates, swarm planning) and a default for chat. Each conversation can also choose its own model in the chat composer. Conversations can be deleted from the chat list.
+
+The model list comes live from your Copilot account, so it shows exactly what your plan allows. It is billed in [GitHub AI Credits](https://docs.github.com/en/copilot/reference/copilot-billing/models-and-pricing) (1 credit = $0.01):
+
+- Each model shows GitHub's price in **US dollars per 1M input and output tokens**.
+- **Auto** shows GitHub's 10% discount.
+- Models your plan disables are greyed out.
+
+elevate doesn't keep its own price table. Prices change when GitHub changes them.
+
+With a BYOK provider, you type the model id, and your provider bills you directly.
 
 ## Built proof-first
 
 The rules that stand between a headline and a branch on your repo are **proved**, not just tested:
 
-- Gate 1 and Gate 2 decisions
-- the recommendation lifecycle ("no swarm without both gates and your approval")
-- the write guard ("never merge, only opted-in repos, drafts only, within budget")
+- the Gate 1 and Gate 2 decisions
+- the recommendation lifecycle: no swarm without both gates and your approval
+- the write guard: never merge, only opted-in repos, drafts only, within budget
+
+<picture>
+  <source media="(prefers-color-scheme: light)" srcset="docs/images/proof-light.svg">
+  <img src="docs/images/proof-dark.svg" alt="Intent, Verus spec and proof, mutation check, differential test against WASM, receipt">
+</picture>
 
 They follow the [PDD Kit](https://www.microsoft.com/en-us/research/blog/formally-verifying-agent-written-full-stack-web-apps-with-pdd-kit/) method:
 
 1. **Intent:** [`proof/intent.md`](proof/intent.md) states 26 requirements in plain words.
 2. **Spec and proof:** [`proof/verified/src/lib.rs`](proof/verified/src/lib.rs) states each requirement in Verus and proves it for every input.
 3. **Mutation check:** one bug is planted per clause, and Verus must reject each one.
-4. **Differential test:** the TypeScript the app runs (`packages/policy`) is compared with the proved code, built to WASM, over every input class. A **negative control** proves the test can fail.
-5. **Receipt:** [`proof/RECEIPT.md`](proof/RECEIPT.md), also shown on the Settings page.
+4. **Differential test:** the TypeScript the app runs (`packages/policy`) is compared with the proved code, built to WASM, over every input class. A **negative control** shows the test can fail.
+5. **Receipt:** [`proof/RECEIPT.md`](proof/RECEIPT.md), which is also shown on the Settings page.
 
-What the proof can't cover is the quality of the model's judgments. The gate eval set measures that: `pnpm eval:gates` runs the reference reviews, and `pnpm eval:gates --live` asks your model for the Gate 1 reviews. See [`fixtures/gate-eval.json`](fixtures/gate-eval.json).
+A proof can't cover the quality of the model's judgments, so the gate eval set measures that. `pnpm eval:gates` runs the reference reviews, and `pnpm eval:gates --live` asks your model for the Gate 1 reviews. The cases are in [`fixtures/gate-eval.json`](fixtures/gate-eval.json).
 
-Last live run (Copilot default model):
+<picture>
+  <source media="(prefers-color-scheme: light)" srcset="docs/images/evals-light.svg">
+  <img src="docs/images/evals-dark.svg" alt="Last live run: Gate 1 precision 1.00, recall 0.89, 0 of 7 hype cases passed, Gate 2 7 of 7 correct">
+</picture>
 
-| Gate 1 | Result |
-|---|---|
-| Precision | 1.00 |
-| Recall | 0.89 |
-| Hype cases passed | 0 of 7 |
+Last live run, on the Copilot default model:
 
-- The only miss was a deliberately borderline "fresh preprint".
-- Gate 2 judged 7 of 7 cases correctly. It is scored on the reference reviews, because `--live` replaces only the Gate 1 reviews.
-- 3 of 16 reviews contradicted themselves and were re-asked (see `consistentReview` in [docs/architecture.md](docs/architecture.md)).
+- **Gate 1** had a precision of 1.00 and a recall of 0.89, and passed 0 of the 7 hype cases. Its only miss was a deliberately borderline "fresh preprint".
+- **Gate 2** judged 7 of 7 cases correctly. It is scored on the reference reviews, because `--live` replaces only the Gate 1 reviews.
+- 3 of 16 reviews contradicted themselves and were asked again. See `consistentReview` in [docs/architecture.md](docs/architecture.md).
 
 ## Commands
 
@@ -80,13 +173,16 @@ Last live run (Copilot default model):
 | `pnpm typecheck` | Type-check every package |
 | `pnpm eval:gates [--live]` | Gate precision and recall on the eval set, plus a threshold sweep |
 | `pnpm smoke:copilot` | One live call through the Copilot SDK or BYOK provider |
-| `pnpm proof` | Re-run proof, mutation check, WASM build, differential test and negative control, then rewrite the receipt (needs Verus) |
+| `pnpm proof` | Re-run the proof, mutation check, WASM build, differential test and negative control, then rewrite the receipt (needs Verus) |
+| `node scripts/diagrams.mjs` | Regenerate the README and website diagrams in both themes |
 
 ## Storage
 
-Local mode uses embedded PGlite (Postgres in WASM) with pgvector, stored in `.data/`. Set `DATABASE_URL` to use a real Postgres instead; `docker compose up db` starts one. Every table has a `tenant_id`, so the move to multi-tenant SaaS is planned for. Tokens and API keys are encrypted at rest (AES-GCM, key in `ELEVATE_SECRET` or `.data/secret.key`).
+Local mode uses embedded PGlite (Postgres in WASM) with pgvector, stored in `.data/`. To use a real Postgres instead, set `DATABASE_URL`; `docker compose up db` starts one.
 
-`docker compose up --build` runs Postgres, the web app and a separate worker from one image. Put `GITHUB_TOKEN` (and any BYOK key) in `.env`; inside a container there is no `gh` login to fall back on. If registry.npmjs.org is blocked on your network, point the image build at a mirror: `NPM_REGISTRY=https://your-mirror/npm/ docker compose build`.
+Every table has a `tenant_id`, so the data model is ready for multi-tenant SaaS. Tokens and API keys are encrypted at rest with AES-GCM. The key comes from `ELEVATE_SECRET`, or from `.data/secret.key`.
+
+In Docker, put `GITHUB_TOKEN` (and any BYOK key) in `.env`, because a container has no `gh` login to fall back on. If registry.npmjs.org is blocked on your network, point the image build at a mirror: `NPM_REGISTRY=https://your-mirror/npm/ docker compose build`.
 
 ## Safety rails
 
@@ -94,3 +190,36 @@ Local mode uses embedded PGlite (Postgres in WASM) with pgvector, stored in `.da
 - Pull requests are drafts. elevate never merges, pushes to a default branch, or force-pushes.
 - Every swarm has a budget for tasks, minutes and agent turns.
 - Every write is checked by the proved guard and recorded in the audit log.
+
+## Built with
+
+**Design.** The interface borrows patterns and components from these libraries and showcases:
+
+| | |
+|---|---|
+| [Aceternity UI](https://ui.aceternity.com/) | Spotlight cards and hero background effects |
+| [21st.dev](https://21st.dev/) | Community React components used as reference for the inbox and cards |
+| [shadcn/ui](https://ui.shadcn.com/) | Component structure, tokens and the overall look |
+| [Base UI](https://base-ui.com/) | Unstyled, accessible primitives under the components |
+| [Sonner](https://sonner.emilkowal.ski/) | Toasts, themed to match light and dark |
+| [cmdk](https://github.com/dip/cmdk) | The ⌘K command palette |
+| [NumberFlow](https://number-flow.barvian.me/) | Animated scores, counters and budgets |
+| [emilkowalski/skills](https://github.com/emilkowalski/skills) | Motion and interaction guidelines |
+| [Beautiful UI](https://www.beautifului.dev/) | Layout and typography reference |
+| [RareUI](https://rareui.in/) | Animated accents reference |
+| [CUI](https://yappologistic.github.io/CUI/) | Inspiration for the dithered background and the website layout |
+
+**Stack.**
+
+- **Framework:** [Next.js](https://nextjs.org/), [React](https://react.dev/), [TypeScript](https://www.typescriptlang.org/)
+- **UI:** [Tailwind CSS v4](https://tailwindcss.com/), [Motion](https://motion.dev/), [Lucide](https://lucide.dev/) icons, [react-markdown](https://github.com/remarkjs/react-markdown)
+- **Agents:** [GitHub Copilot SDK](https://github.com/github/copilot-sdk)
+- **Data:**
+  - [Drizzle ORM](https://orm.drizzle.team/)
+  - [PGlite](https://pglite.dev/) and [pgvector](https://github.com/pgvector/pgvector)
+  - a Postgres job queue built in (`FOR UPDATE SKIP LOCKED`)
+  - [Octokit](https://github.com/octokit/rest.js) for GitHub
+- **Proof:**
+  - [Verus](https://github.com/verus-lang/verus)
+  - the [PDD Kit](https://www.microsoft.com/en-us/research/blog/formally-verifying-agent-written-full-stack-web-apps-with-pdd-kit/) method
+- **Tests:** [Vitest](https://vitest.dev/), [Playwright](https://playwright.dev/)

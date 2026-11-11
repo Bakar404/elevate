@@ -1,13 +1,14 @@
 "use client";
 
 import { Command } from "cmdk";
-import { ArrowRight, FolderGit2, PanelLeft, Palette, Radar, RefreshCw, Satellite } from "lucide-react";
+import { ArrowRight, FolderGit2, PanelLeft, Palette, Radar, RefreshCw, Satellite, SunMoon } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 import { toast } from "sonner";
 import { SIDEBAR_EVENT } from "@/lib/prefs";
 import { send } from "@/lib/utils";
 import { NAV } from "./sidebar";
+import { THEME_EVENT } from "./theme";
 
 type Rec = { id: string; title: string; repo: string; status: string };
 type Repo = { id: string; fullName: string; language: string | null; topics: string[]; profile: { stack: string[]; domains: string[] } | null };
@@ -96,6 +97,15 @@ export function CommandPalette() {
             <PanelLeft /> Toggle sidebar
             <kbd className="ml-auto font-mono text-[11px] text-faint">⌘B</kbd>
           </Item>
+          <Item
+            value="Toggle theme light dark mode"
+            onSelect={() => {
+              setOpen(false);
+              window.dispatchEvent(new Event(THEME_EVENT));
+            }}
+          >
+            <SunMoon /> Toggle light / dark theme
+          </Item>
           <Item onSelect={() => go("/brand")}>
             <Palette /> Logo drafts
           </Item>
@@ -153,7 +163,7 @@ export function CommandPalette() {
 function Item({ children, ...props }: React.ComponentProps<typeof Command.Item>) {
   return (
     <Command.Item
-      className="flex h-9 cursor-pointer items-center gap-2.5 rounded-md px-2 text-sm text-muted data-[selected=true]:bg-white/[0.06] data-[selected=true]:text-fg [&_svg]:size-4 [&_svg]:shrink-0"
+      className="flex h-9 cursor-pointer items-center gap-2.5 rounded-md px-2 text-sm text-muted data-[selected=true]:bg-ink/[0.06] data-[selected=true]:text-fg [&_svg]:size-4 [&_svg]:shrink-0"
       {...props}
     >
       {children}

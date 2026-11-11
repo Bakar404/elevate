@@ -59,6 +59,28 @@ test("command palette opens with the keyboard and navigates", async ({ page }) =
   await expect(page.getByTestId("technique").first()).toBeVisible();
 });
 
+test.describe("theme", () => {
+  test.use({ colorScheme: "light" });
+  test("follows the OS on first visit, toggles, and is remembered", async ({ page }) => {
+    const html = page.locator("html");
+    const bg = () => page.evaluate(() => getComputedStyle(document.body).backgroundColor);
+    await page.goto("/");
+    await expect(html).toHaveClass(/\blight\b/);
+    const light = await bg();
+    await page.getByTestId("theme-toggle").click();
+    await expect(html).toHaveClass(/\bdark\b/);
+    expect(await bg()).not.toBe(light);
+    await page.reload();
+    await expect(html).toHaveClass(/\bdark\b/);
+    await page.keyboard.press("ControlOrMeta+k");
+    await page.getByPlaceholder("Search repos by stack or domain, techniques, recommendations…").fill("theme");
+    await page.keyboard.press("Enter");
+    await expect(html).toHaveClass(/\blight\b/);
+    await page.reload();
+    await expect(html).toHaveClass(/\blight\b/);
+  });
+});
+
 test("hype is filtered on the radar with its reasons", async ({ page }) => {
   await page.goto("/radar?show=hype");
   await expect(page.getByText(/weight-space/i).first()).toBeVisible();
@@ -101,17 +123,17 @@ test("chat model can be picked per conversation, and conversations can be delete
   await page.goto("/chat");
   await page.getByRole("button", { name: "New chat" }).click();
   await page.getByTestId("model-picker").click();
-  await page.getByRole("option", { name: /GPT-5 mini/ }).click();
-  await expect(page.getByTestId("model-picker")).toContainText("GPT-5 mini");
+  await page.getByRole("option", { name: /GPT-6 Luna/ }).click();
+  await expect(page.getByTestId("model-picker")).toContainText("GPT-6 Luna");
   await page.getByLabel("Message").fill("list my repos please");
   await page.getByLabel("Send").click();
-  await expect(page.getByTestId("messages")).toContainText("stand-in for gpt-5-mini");
+  await expect(page.getByTestId("messages")).toContainText("stand-in for gpt-6-luna");
 
   const row = page.getByTestId("thread").filter({ hasText: "list my repos please" });
   await expect(row).toHaveCount(1);
   await page.reload();
   await row.click();
-  await expect(page.getByTestId("model-picker")).toContainText("GPT-5 mini");
+  await expect(page.getByTestId("model-picker")).toContainText("GPT-6 Luna");
 
   await row.hover();
   await row.getByRole("button", { name: /Delete/ }).click();

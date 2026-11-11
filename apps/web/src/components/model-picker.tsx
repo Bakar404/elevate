@@ -6,7 +6,16 @@ import { Check, ChevronsUpDown, Cpu } from "lucide-react";
 import { useEffect, useState } from "react";
 import { cn } from "@/lib/utils";
 
-export type ModelOption = { id: string; name: string; vendor?: string; multiplier?: number; enabled: boolean };
+export type ModelOption = {
+  id: string;
+  name: string;
+  vendor?: string;
+  /** GitHub's price in USD per 1M tokens. */
+  price?: { input: number; output: number; cachedInput?: number };
+  multiplier?: number;
+  discountPercent?: number;
+  enabled: boolean;
+};
 export type ModelsResponse = { provider: string; models: ModelOption[]; error?: string; prefs: { pipeline: string; chat: string } };
 
 let pending: Promise<ModelsResponse> | null = null;
@@ -25,9 +34,18 @@ export function useModels() {
   return { data, refresh: () => load(true) };
 }
 
-function cost(m: ModelOption) {
-  if (m.multiplier == null) return null;
-  return m.multiplier === 0 ? "included" : `${m.multiplier}×`;
+const usd = (n: number) => `$${Number.isInteger(n) ? n : n.toFixed(Math.round(n * 1000) % 10 ? 3 : 2)}`;
+
+/** GitHub's own numbers only: per-token price (usage-based billing), legacy multiplier, or the auto discount. */
+function cost(m: ModelOption): { text: string; title: string } | null {
+  if (m.price)
+    return {
+      text: `${usd(m.price.input)} / ${usd(m.price.output)}`,
+      title: `GitHub price per 1M tokens: ${usd(m.price.input)} input, ${usd(m.price.output)} output${m.price.cachedInput != null ? `, ${usd(m.price.cachedInput)} cached input` : ""}. Billed in GitHub AI Credits ($0.01 each).`,
+    };
+  if (m.multiplier != null) return { text: `${m.multiplier}×`, title: "Premium-request multiplier (legacy request-based billing)" };
+  if (m.discountPercent) return { text: `−${m.discountPercent}%`, title: `GitHub discounts auto model selection by ${m.discountPercent}%` };
+  return null;
 }
 
 /**
@@ -92,6 +110,9 @@ export function ModelPicker({
               />
               <Command.List className="max-h-72 overflow-y-auto p-1.5">
                 <Command.Empty className="px-3 py-4 text-center text-xs text-faint">No model matches.</Command.Empty>
+                {models.some((m) => m.price) && (
+                  <div className="flex justify-end px-2 pb-1 text-[10px] uppercase tracking-wide text-faint">$ per 1M tokens · in / out</div>
+                )}
                 <Row selected={!value} onSelect={() => pick("")} value={`default ${defaultLabel}`}>
                   <span className="truncate">{defaultLabel}</span>
                 </Row>
@@ -107,7 +128,16 @@ export function ModelPicker({
                     {!m.enabled ? (
                       <span className="shrink-0 text-[11px] text-faint">off in policy</span>
                     ) : (
-                      cost(m) && <span className={cn("shrink-0 text-[11px] tabular-nums", m.multiplier === 0 ? "text-olive" : "text-faint")}>{cost(m)}</span>
+                      (() => {
+                        const c = cost(m);
+                        return (
+                          c && (
+                            <span title={c.title} className={cn("shrink-0 font-mono text-[11px] tabular-nums", m.discountPercent ? "text-olive" : "text-faint")}>
+                              {c.text}
+                            </span>
+                          )
+                        );
+                      })()
                     )}
                   </Row>
                 ))}
@@ -130,7 +160,7 @@ export function ModelPicker({
 function Row({ selected, children, ...props }: React.ComponentProps<typeof Command.Item> & { selected: boolean }) {
   return (
     <Command.Item
-      className="flex h-8 cursor-pointer items-center gap-2 rounded-md px-2 text-sm text-muted data-[disabled=true]:cursor-not-allowed data-[disabled=true]:opacity-50 data-[selected=true]:bg-white/[0.06] data-[selected=true]:text-fg"
+      className="flex h-8 cursor-pointer items-center gap-2 rounded-md px-2 text-sm text-muted data-[disabled=true]:cursor-not-allowed data-[disabled=true]:opacity-50 data-[selected=true]:bg-ink/[0.06] data-[selected=true]:text-fg"
       {...props}
     >
       <Check className={cn("size-3.5 shrink-0 text-sky", !selected && "invisible")} aria-hidden />

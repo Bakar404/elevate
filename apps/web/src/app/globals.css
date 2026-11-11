@@ -21,6 +21,8 @@
   --color-olive: oklch(0.67 0.11 125);
   --color-sand: oklch(0.83 0.1 85);
   --color-danger: oklch(0.66 0.19 25);
+  /* Hairline overlays (hover, selected) — white on dark, ink on light. */
+  --color-ink: oklch(1 0 0);
 
   --radius-card: 14px;
 
@@ -45,6 +47,24 @@
   color-scheme: dark;
 }
 
+/* Light theme: same landscape palette, deepened so it holds contrast on paper. */
+:root.light {
+  color-scheme: light;
+  --color-bg: oklch(0.982 0.004 250);
+  --color-panel: oklch(1 0 0);
+  --color-raised: oklch(0.955 0.005 250);
+  --color-line: oklch(0.25 0.02 250 / 0.1);
+  --color-line-strong: oklch(0.25 0.02 250 / 0.17);
+  --color-fg: oklch(0.21 0.012 250);
+  --color-muted: oklch(0.43 0.014 250);
+  --color-faint: oklch(0.56 0.012 250);
+  --color-sky: oklch(0.53 0.15 250);
+  --color-cloud: oklch(0.6 0.06 240);
+  --color-olive: oklch(0.52 0.12 125);
+  --color-sand: oklch(0.6 0.13 70);
+  --color-danger: oklch(0.56 0.2 25);
+  --color-ink: oklch(0.2 0.02 250);
+}
 html {
   scrollbar-gutter: stable;
   scroll-padding-top: 4.5rem;

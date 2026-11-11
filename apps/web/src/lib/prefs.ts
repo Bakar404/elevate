@@ -3,6 +3,15 @@
 export const SIDEBAR_COOKIE = "elevate-sidebar";
 export const SIDEBAR_EVENT = "elevate:sidebar";
 
+export const THEME_COOKIE = "elevate-theme";
+export type Theme = "dark" | "light";
+
+/**
+ * Runs before paint. A saved choice is already on <html> from the server; without one,
+ * follow the OS setting so the first visit doesn't flash the wrong theme.
+ */
+export const themeBootScript = `(()=>{try{var d=document.documentElement;if(document.cookie.indexOf("elevate-theme=")>-1)return;var l=matchMedia("(prefers-color-scheme: light)").matches;d.classList.toggle("light",l);d.classList.toggle("dark",!l)}catch(e){}})()`;
+
 export const LOGO_COOKIE = "elevate-logo";
 export const LOGO_VARIANTS = ["ascent", "summit", "steps", "lift", "contour"] as const;
 export type LogoVariant = (typeof LOGO_VARIANTS)[number];

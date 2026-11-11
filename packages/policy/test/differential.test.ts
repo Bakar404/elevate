@@ -7,7 +7,8 @@
  * ELEVATE_POLICY_WASM overrides the module; PDD_RESULTS writes a JSON summary.
  */
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
-import { dirname, join, resolve } from "node:path";
+import { tmpdir } from "node:os";
+import { dirname, join, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 import {
@@ -26,6 +27,13 @@ import {
 } from "../src/index";
 
 const here = dirname(fileURLToPath(import.meta.url));
+// Results are committed: show repo-relative or %TEMP%-relative paths, never this machine's home directory.
+const shownPath = (p: string) => {
+  const rel = relative(resolve(here, "../../.."), p);
+  if (!rel.startsWith("..")) return rel.replaceAll("\\", "/");
+  const tmp = process.env.TEMP ?? tmpdir();
+  return p.startsWith(tmp) ? `%TEMP%${p.slice(tmp.length)}` : p;
+};
 const wasmPath = process.env.ELEVATE_POLICY_WASM ?? resolve(here, "../../../proof/build/elevate_policy.wasm");
 
 type Exports = {
@@ -199,7 +207,7 @@ describe.skipIf(!existsSync(wasmPath))("D: packages/policy against the proved bu
     expect(Object.keys(by.transition?.outcomes ?? {}).length).toBe(STATUSES.length + 1); // all 8 statuses + none
     expect(Object.keys(by.replay?.outcomes ?? {}).length).toBe(STATUSES.length + 1); // all 8 statuses + none
     if (process.env.PDD_RESULTS) {
-      writeFileSync(process.env.PDD_RESULTS, `${JSON.stringify({ wasm: wasmPath, sections }, null, "\t")}\n`);
+      writeFileSync(process.env.PDD_RESULTS, `${JSON.stringify({ wasm: shownPath(wasmPath), sections }, null, "\t")}\n`);
     }
   });
 });

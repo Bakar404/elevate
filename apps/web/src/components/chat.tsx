@@ -166,7 +166,7 @@ export function Chat({ threads: initial, demo }: { threads: Thread[]; demo: bool
             <div
               key={t.id}
               data-testid="thread"
-              className={cn("group flex items-center rounded-md transition-colors", t.id === active ? "bg-white/[0.06] text-fg" : "text-muted hover:bg-white/[0.03] hover:text-fg")}
+              className={cn("group flex items-center rounded-md transition-colors", t.id === active ? "bg-ink/[0.06] text-fg" : "text-muted hover:bg-ink/[0.03] hover:text-fg")}
             >
               <button onClick={() => setActive(t.id)} className="min-w-0 flex-1 truncate px-2.5 py-1.5 text-left text-sm" aria-current={t.id === active ? "true" : undefined}>
                 {t.title}

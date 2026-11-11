@@ -16,7 +16,7 @@ export const buttonVariants = cva(
       variant: {
         primary: "bg-fg text-bg hover:bg-fg/90",
         secondary: "border border-line-strong bg-raised/70 text-fg hover:bg-raised",
-        ghost: "text-muted hover:bg-white/5 hover:text-fg",
+        ghost: "text-muted hover:bg-ink/5 hover:text-fg",
         danger: "border border-danger/40 bg-danger/10 text-danger hover:bg-danger/20",
       },
       size: { sm: "h-8 px-3 text-[13px]", md: "h-9 px-4", lg: "h-11 px-5 text-[15px]", icon: "size-8" },
@@ -30,7 +30,7 @@ export function Button({ className, variant, size, ...props }: ComponentProps<"b
 }
 
 const tones: Record<Tone, string> = {
-  neutral: "border-line-strong bg-white/5 text-muted",
+  neutral: "border-line-strong bg-ink/5 text-muted",
   sky: "border-sky/30 bg-sky/10 text-sky",
   olive: "border-olive/30 bg-olive/10 text-olive",
   sand: "border-sand/30 bg-sand/10 text-sand",
@@ -61,7 +61,7 @@ export function SpotlightCard({ className, children, ...props }: ComponentProps<
       className={cn(
         "group/spot relative overflow-hidden rounded-[var(--radius-card)] border border-line bg-panel/80 backdrop-blur-sm transition-colors duration-200 hover:border-line-strong",
         "before:pointer-events-none before:absolute before:inset-0 before:opacity-0 before:transition-opacity before:duration-300 hover:before:opacity-100",
-        "before:bg-[radial-gradient(360px_circle_at_var(--x)_var(--y),oklch(1_0_0/0.06),transparent_60%)]",
+        "before:bg-[radial-gradient(360px_circle_at_var(--x)_var(--y),color-mix(in_oklch,var(--color-ink)_6%,transparent),transparent_60%)]",
         className,
       )}
       {...props}

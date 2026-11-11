@@ -8,6 +8,7 @@ import { useCallback, useEffect, useState, type ReactElement } from "react";
 import { cn } from "@/lib/utils";
 import { setPrefCookie, SIDEBAR_COOKIE, SIDEBAR_EVENT, type LogoVariant } from "@/lib/prefs";
 import { LogoMark } from "./logo";
+import { ThemeToggle } from "./theme";
 import { Badge, Tip } from "./ui";
 
 export const NAV = [
@@ -101,7 +102,7 @@ export function Sidebar({
                   {active && (
                     <motion.span
                       layoutId="nav-active"
-                      className="absolute inset-0 rounded-lg border border-line-strong bg-white/[0.06]"
+                      className="absolute inset-0 rounded-lg border border-line-strong bg-ink/[0.06]"
                       transition={{ type: "spring", duration: 0.35, bounce: 0.15 }}
                     />
                   )}
@@ -116,6 +117,7 @@ export function Sidebar({
         })}
       </nav>
       <div className="mt-auto flex flex-col gap-1.5">
+        {tip("Toggle theme", <ThemeToggle labelClassName={label} />)}
         {tip(
           "Command ⌘K",
           <button
@@ -135,7 +137,7 @@ export function Sidebar({
             aria-label={collapsed ? "Expand sidebar" : "Collapse sidebar"}
             aria-expanded={!collapsed}
             data-testid="sidebar-toggle"
-            className="flex h-9 items-center gap-2 rounded-lg px-2.5 text-sm text-faint transition-colors hover:bg-white/5 hover:text-muted max-md:hidden"
+            className="flex h-9 items-center gap-2 rounded-lg px-2.5 text-sm text-faint transition-colors hover:bg-ink/5 hover:text-muted max-md:hidden"
           >
             {collapsed ? <PanelLeftOpen className="size-4 shrink-0" /> : <PanelLeftClose className="size-4 shrink-0" />}
             <span className={label}>Collapse</span>

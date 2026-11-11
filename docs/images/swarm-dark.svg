@@ -1,0 +1,76 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 300" width="1200" height="300" role="img" aria-label="elevate swarm: planner, implementers, tester, reviewer, publisher">
+<title>elevate swarm: planner, implementers, tester, reviewer, publisher</title>
+<style>
+  .flow { stroke-dasharray: 4 6; animation: march 1.4s linear infinite; }
+  .ping { transform-box: fill-box; transform-origin: center; animation: ping 2.4s cubic-bezier(.23,1,.32,1) infinite; }
+  @keyframes march { to { stroke-dashoffset: -20; } }
+  @keyframes ping { from { transform: scale(1); opacity: .6; } to { transform: scale(2.4); opacity: 0; } }
+  @media (prefers-reduced-motion: reduce) { .flow, .ping { animation: none; } }
+</style>
+<defs>
+  <pattern id="dots" width="18" height="18" patternUnits="userSpaceOnUse"><circle cx="1" cy="1" r="0.9" fill="rgba(255,255,255,0.07)"/></pattern>
+  <radialGradient id="glow" cx="50%" cy="50%" r="50%"><stop offset="0" stop-color="#5b93d9" stop-opacity="0.14"/><stop offset="1" stop-color="#5b93d9" stop-opacity="0"/></radialGradient>
+</defs>
+<rect width="1200" height="300" rx="18" fill="#0d1015"/>
+<rect width="1200" height="300" rx="18" fill="url(#dots)"/>
+<rect x="0.5" y="0.5" width="1199" height="299" rx="17.5" fill="none" stroke="rgba(255,255,255,0.08)"/>
+<text x="32" y="40" text-anchor="start" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Inter, Helvetica, Arial, sans-serif" font-size="11" fill="#767e8a">AN APPROVED RECOMMENDATION BECOMES A TASK GRAPH</text>
+<g>
+  <rect x="32" y="110" width="170" height="64" rx="12" fill="#14181e" stroke="rgba(255,255,255,0.15)" stroke-opacity="1"/>
+  
+  <text x="46" y="131" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Inter, Helvetica, Arial, sans-serif" font-size="10" letter-spacing="0.08em" fill="#767e8a">PLANNER</text>
+  <text x="46" y="151" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Inter, Helvetica, Arial, sans-serif" font-size="14" font-weight="600" fill="#eef1f5">Plan the change</text>
+  <text x="46" y="167" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Inter, Helvetica, Arial, sans-serif" font-size="11.5" fill="#a6aeb9">reads the repo profile</text>
+</g>
+<g>
+  <rect x="262" y="60" width="190" height="64" rx="12" fill="#14181e" stroke="rgba(255,255,255,0.15)" stroke-opacity="1"/>
+  <rect x="274" y="74" width="6" height="6" rx="1.5" transform="rotate(45 277 77)" fill="#5b93d9"/>
+  <text x="288" y="81" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Inter, Helvetica, Arial, sans-serif" font-size="10" letter-spacing="0.08em" fill="#767e8a">IMPLEMENTER</text>
+  <text x="276" y="101" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Inter, Helvetica, Arial, sans-serif" font-size="14" font-weight="600" fill="#eef1f5">Implement</text>
+  <text x="276" y="117" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Inter, Helvetica, Arial, sans-serif" font-size="11.5" fill="#a6aeb9">worktree or cloud agent</text>
+</g>
+<g>
+  <rect x="262" y="160" width="190" height="64" rx="12" fill="#14181e" stroke="rgba(255,255,255,0.15)" stroke-opacity="1"/>
+  <rect x="274" y="174" width="6" height="6" rx="1.5" transform="rotate(45 277 177)" fill="#5b93d9"/>
+  <text x="288" y="181" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Inter, Helvetica, Arial, sans-serif" font-size="10" letter-spacing="0.08em" fill="#767e8a">IMPLEMENTER</text>
+  <text x="276" y="201" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Inter, Helvetica, Arial, sans-serif" font-size="14" font-weight="600" fill="#eef1f5">Before/after checks</text>
+  <text x="276" y="217" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Inter, Helvetica, Arial, sans-serif" font-size="11.5" fill="#a6aeb9">the measure from Gate 2</text>
+</g>
+<g>
+  <rect x="512" y="110" width="170" height="64" rx="12" fill="#14181e" stroke="rgba(255,255,255,0.15)" stroke-opacity="1"/>
+  <rect x="524" y="124" width="6" height="6" rx="1.5" transform="rotate(45 527 127)" fill="#8fa955"/>
+  <text x="538" y="131" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Inter, Helvetica, Arial, sans-serif" font-size="10" letter-spacing="0.08em" fill="#767e8a">TESTER</text>
+  <text x="526" y="151" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Inter, Helvetica, Arial, sans-serif" font-size="14" font-weight="600" fill="#eef1f5">Verify</text>
+  <text x="526" y="167" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Inter, Helvetica, Arial, sans-serif" font-size="11.5" fill="#a6aeb9">tests + benchmarks</text>
+</g>
+<g>
+  <rect x="742" y="110" width="170" height="64" rx="12" fill="#14181e" stroke="rgba(255,255,255,0.15)" stroke-opacity="1"/>
+  <rect x="754" y="124" width="6" height="6" rx="1.5" transform="rotate(45 757 127)" fill="#8fa955"/>
+  <text x="768" y="131" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Inter, Helvetica, Arial, sans-serif" font-size="10" letter-spacing="0.08em" fill="#767e8a">REVIEWER</text>
+  <text x="756" y="151" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Inter, Helvetica, Arial, sans-serif" font-size="14" font-weight="600" fill="#eef1f5">Review the diff</text>
+  <text x="756" y="167" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Inter, Helvetica, Arial, sans-serif" font-size="11.5" fill="#a6aeb9">skeptical second model</text>
+</g>
+<g>
+  <rect x="972" y="110" width="196" height="64" rx="12" fill="#14181e" stroke="#e0c37c" stroke-opacity="0.75"/>
+  <rect x="984" y="124" width="6" height="6" rx="1.5" transform="rotate(45 987 127)" fill="#e0c37c"/>
+  <text x="998" y="131" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Inter, Helvetica, Arial, sans-serif" font-size="10" letter-spacing="0.08em" fill="#767e8a">PUBLISHER</text>
+  <text x="986" y="151" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Inter, Helvetica, Arial, sans-serif" font-size="14" font-weight="600" fill="#eef1f5">Open a draft PR</text>
+  <text x="986" y="167" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Inter, Helvetica, Arial, sans-serif" font-size="11.5" fill="#a6aeb9">guarded write, audited</text>
+</g>
+<path d="M 202 142 C 232 142, 232 92, 256 92" fill="none" stroke="#5b93d9" stroke-opacity="1" stroke-width="1.5" class="flow" stroke-linecap="round"/>
+<polyline points="250,88 256,92 250,96" fill="none" stroke="#5b93d9" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+<path d="M 202 142 C 232 142, 232 192, 256 192" fill="none" stroke="#5b93d9" stroke-opacity="1" stroke-width="1.5" class="flow" stroke-linecap="round"/>
+<polyline points="250,188 256,192 250,196" fill="none" stroke="#5b93d9" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+<path d="M 452 92 C 482 92, 482 142, 506 142" fill="none" stroke="#8fa955" stroke-opacity="1" stroke-width="1.5" class="flow" stroke-linecap="round"/>
+<polyline points="500,138 506,142 500,146" fill="none" stroke="#8fa955" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+<path d="M 452 192 C 482 192, 482 142, 506 142" fill="none" stroke="#8fa955" stroke-opacity="1" stroke-width="1.5" class="flow" stroke-linecap="round"/>
+<path d="M 682 142 L 736 142" fill="none" stroke="#8fa955" stroke-opacity="1" stroke-width="1.5" class="flow" stroke-linecap="round"/>
+<polyline points="730,138 736,142 730,146" fill="none" stroke="#8fa955" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+<path d="M 912 142 L 966 142" fill="none" stroke="#e0c37c" stroke-opacity="1" stroke-width="1.5" class="flow" stroke-linecap="round"/>
+<polyline points="960,138 966,142 960,146" fill="none" stroke="#e0c37c" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+<text x="32" y="262" text-anchor="start" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Inter, Helvetica, Arial, sans-serif" font-size="10" fill="#767e8a">RUNS ON</text>
+<g><rect x="92" y="246" width="158" height="24" rx="12" fill="#1b2027" stroke="rgba(255,255,255,0.08)"/><circle cx="104" cy="258" r="3" fill="#b6cbe0"/><text x="113" y="262" font-family="ui-monospace, 'Cascadia Code', 'SFMono-Regular', Menlo, Consolas, monospace" font-size="11" fill="#a6aeb9">Copilot coding agent</text></g>
+<g><rect x="262" y="246" width="171.2" height="24" rx="12" fill="#1b2027" stroke="rgba(255,255,255,0.08)"/><circle cx="274" cy="258" r="3" fill="#b6cbe0"/><text x="283" y="262" font-family="ui-monospace, 'Cascadia Code', 'SFMono-Regular', Menlo, Consolas, monospace" font-size="11" fill="#a6aeb9">Claude (GitHub Action)</text></g>
+<g><rect x="445.2" y="246" width="98.6" height="24" rx="12" fill="#1b2027" stroke="rgba(255,255,255,0.08)"/><circle cx="457.2" cy="258" r="3" fill="#b6cbe0"/><text x="466.2" y="262" font-family="ui-monospace, 'Cascadia Code', 'SFMono-Regular', Menlo, Consolas, monospace" font-size="11" fill="#a6aeb9">Codex cloud</text></g>
+<g><rect x="555.8" y="246" width="250.39999999999998" height="24" rx="12" fill="#1b2027" stroke="rgba(255,255,255,0.08)"/><circle cx="567.8" cy="258" r="3" fill="#b6cbe0"/><text x="576.8" y="262" font-family="ui-monospace, 'Cascadia Code', 'SFMono-Regular', Menlo, Consolas, monospace" font-size="11" fill="#a6aeb9">local copilot / claude / codex CLI</text></g>
+</svg>

@@ -1,5 +1,5 @@
 {
-	"verus": "C:\\Users\\AABDEL~1\\AppData\\Local\\Temp\\verus\\verus-arm64-win\\verus.exe",
+	"verus": "%TEMP%\\verus\\verus-arm64-win\\verus.exe",
 	"baseline": {
 		"proved": true,
 		"summary": "verification results:: 12 verified, 0 errors"

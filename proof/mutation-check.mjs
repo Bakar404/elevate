@@ -9,12 +9,14 @@
 // VERUS overrides the verus binary (default %TEMP%\verus\verus-arm64-win).
 import { spawnSync } from "node:child_process";
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
-import { tmpdir } from "node:os";
+import { homedir, tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const here = dirname(fileURLToPath(import.meta.url));
 const source = readFileSync(join(here, "verified", "src", "lib.rs"), "utf8").replace(/\r\n/g, "\n");
+// Results are committed, so keep machine-specific path prefixes out of them.
+const redact = (p) => [[process.env.TEMP ?? tmpdir(), "%TEMP%"], [tmpdir(), "%TEMP%"], [homedir(), "~"]].reduce((s, [from, to]) => (from && s.startsWith(from) ? to + s.slice(from.length) : s), p);
 const verus = process.env.VERUS ?? join(process.env.TEMP ?? tmpdir(), "verus", "verus-arm64-win", "verus.exe");
 const jsonOut = process.argv.includes("--json") ? process.argv[process.argv.indexOf("--json") + 1] : null;
 
@@ -101,7 +103,7 @@ if (isMain) {
 		return { proved: run.status === 0, caughtBy, summary, output };
 	};
 
-	const results = { verus, baseline: null, mutants: [], draftGap: null };
+	const results = { verus: redact(verus), baseline: null, mutants: [], draftGap: null };
 	let failures = 0;
 	try {
 		const baseline = prove(source, "baseline");

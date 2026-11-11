@@ -141,7 +141,7 @@ export function ActivityGraph({ data, logo }: { data: Graph; logo?: LogoVariant 
         <svg viewBox={`0 0 ${W} ${H}`} className="block h-auto w-full select-none" onMouseLeave={() => setHover(null)}>
           <defs>
             <pattern id="graph-dots" width="18" height="18" patternUnits="userSpaceOnUse">
-              <circle cx="1" cy="1" r="0.8" fill="white" opacity="0.07" />
+              <circle cx="1" cy="1" r="0.8" fill="var(--color-ink)" opacity="0.07" />
             </pattern>
             <radialGradient id="graph-glow" cx="50%" cy="50%" r="50%">
               <stop offset="0" stopColor="var(--color-sky)" stopOpacity="0.16" />

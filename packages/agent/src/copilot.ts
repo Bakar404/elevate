@@ -80,27 +80,60 @@ export type ModelOption = {
   name: string;
   /** Who serves it (e.g. "anthropic", "openai"), when the runtime says. */
   vendor?: string;
-  /** Premium-request multiplier; 0 means included in the plan. */
+  /** GitHub's price in USD per 1M tokens (usage-based billing: AI credits, 1 credit = $0.01). */
+  price?: { input: number; output: number; cachedInput?: number };
+  /** Legacy premium-request multiplier (annual plans still on request-based billing). */
   multiplier?: number;
+  /** Discount GitHub applies, e.g. 10 for auto model selection. */
+  discountPercent?: number;
   /** False when the account's Copilot policy has it switched off. */
   enabled: boolean;
 };
 
-/** Models the signed-in Copilot seat can use, enabled first, cheaper first. */
-export async function listCopilotModels(): Promise<ModelOption[]> {
-  const client = await getCopilotClient();
-  const models = await client.listModels();
-  return models
-    .map((m) => ({
-      id: m.id,
-      name: m.name || m.id,
-      vendor: (m.provider as { name?: string; id?: string } | undefined)?.name ?? (m.provider as { id?: string } | undefined)?.id,
-      multiplier: m.billing?.multiplier,
-      enabled: m.policy?.state !== "disabled",
-    }))
-    .sort((a, b) => Number(b.enabled) - Number(a.enabled) || (a.multiplier ?? 1) - (b.multiplier ?? 1) || a.name.localeCompare(b.name));
+type RawModel = {
+  id: string;
+  name?: string;
+  provider?: unknown;
+  policy?: { state?: string };
+  billing?: {
+    multiplier?: number;
+    discountPercent?: number;
+    tokenPrices?: { inputPrice?: number; outputPrice?: number; cacheReadPrice?: number; cachePrice?: number; batchSize?: number };
+  };
+};
+
+const usd = (credits: number, batch: number) => Math.round(credits * 0.01 * (1_000_000 / batch) * 10_000) / 10_000;
+
+/** Maps the runtime's model entry to an option. Token prices arrive as AI credits per billing batch. */
+export function toModelOption(m: RawModel): ModelOption {
+  const p = m.billing?.tokenPrices;
+  const batch = p?.batchSize || 1_000_000;
+  const provider = m.provider as { name?: string; id?: string } | string | undefined;
+  return {
+    id: m.id,
+    name: m.name || m.id,
+    vendor: typeof provider === "string" ? provider : (provider?.name ?? provider?.id),
+    price:
+      p?.inputPrice != null && p.outputPrice != null
+        ? { input: usd(p.inputPrice, batch), output: usd(p.outputPrice, batch), cachedInput: (p.cacheReadPrice ?? p.cachePrice) != null ? usd((p.cacheReadPrice ?? p.cachePrice)!, batch) : undefined }
+        : undefined,
+    multiplier: m.billing?.multiplier,
+    discountPercent: m.billing?.discountPercent,
+    enabled: m.policy?.state !== "disabled",
+  };
 }
 
+/** Auto first (GitHub picks and discounts it), then cheaper output tokens first; enabled before disabled. */
+export function sortModels(models: ModelOption[]): ModelOption[] {
+  const rank = (m: ModelOption) => (m.id === "auto" ? -1 : (m.price?.output ?? (m.multiplier != null ? m.multiplier * 4 : Infinity)));
+  return [...models].sort((a, b) => Number(b.enabled) - Number(a.enabled) || rank(a) - rank(b) || a.name.localeCompare(b.name));
+}
+
+/** Models the signed-in Copilot seat can use, with GitHub's live prices. */
+export async function listCopilotModels(): Promise<ModelOption[]> {
+  const client = await getCopilotClient();
+  return sortModels((await client.listModels()).map((m) => toModelOption(m as RawModel)));
+}
 export async function stopCopilotClient() {
   const g = globalThis as G;
   const pending = g[CLIENT_KEY];

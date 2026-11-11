@@ -53,7 +53,7 @@ export default async function InboxPage({ searchParams }: { searchParams: Promis
         {/* The background fades out instead of stopping at a hard edge. */}
         <div className="absolute inset-x-0 top-0 -z-10 h-[calc(100%+6rem)] overflow-hidden [mask-image:linear-gradient(to_bottom,#000_55%,transparent)]">
           <DitherBackground />
-          <div className="absolute inset-0 bg-[linear-gradient(to_bottom,oklch(0.145_0.006_250/0.55),oklch(0.145_0.006_250/0.85)_70%,var(--color-bg))]" />
+          <div className="absolute inset-0 bg-[linear-gradient(to_bottom,color-mix(in_oklch,var(--color-bg)_55%,transparent),color-mix(in_oklch,var(--color-bg)_85%,transparent)_70%,var(--color-bg))]" />
         </div>
         <div className="mx-auto max-w-5xl px-8 pb-10 pt-14">
           <div className="inline-flex items-center gap-2 rounded-full border border-line-strong bg-bg/50 px-3 py-1 text-xs text-muted backdrop-blur">

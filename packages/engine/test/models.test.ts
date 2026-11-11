@@ -36,9 +36,9 @@ describe("chat models and conversations", () => {
 
   it("the picked model answers the next message", async () => {
     const t = await createThread(ctx);
-    await setThreadModel(ctx, t.id, "gpt-5-mini");
+    await setThreadModel(ctx, t.id, "gpt-6-luna");
     const text = await chat(ctx, t.id, "list my repos", () => {});
-    expect(text).toContain("gpt-5-mini");
+    expect(text).toContain("gpt-6-luna");
   });
 
   it("deleting a conversation removes its messages too, and only that conversation", async () => {

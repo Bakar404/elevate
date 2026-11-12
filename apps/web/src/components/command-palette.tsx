@@ -6,6 +6,7 @@ import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 import { toast } from "sonner";
 import { SIDEBAR_EVENT, PIP_EVENT } from "@/lib/prefs";
+import { useModKey } from "@/lib/mod-key";
 import { send } from "@/lib/utils";
 import { NAV } from "./sidebar";
 import { THEME_EVENT } from "./theme";
@@ -17,6 +18,7 @@ type Tech = { id: string; name: string; category: string; legitimacy: { passed: 
 /** ⌘K. Opens instantly: keyboard-triggered UI should not animate in. */
 export function CommandPalette() {
   const [open, setOpen] = useState(false);
+  const mod = useModKey();
   const [recs, setRecs] = useState<Rec[]>([]);
   const [repos, setRepos] = useState<Repo[]>([]);
   const [techs, setTechs] = useState<Tech[]>([]);
@@ -95,7 +97,7 @@ export function CommandPalette() {
             }}
           >
             <PanelLeft /> Toggle sidebar
-            <kbd className="ml-auto font-mono text-[11px] text-faint">⌘B</kbd>
+            <kbd className="ml-auto font-mono text-[11px] text-faint">{mod}B</kbd>
           </Item>
           <Item
             value="Toggle theme light dark mode"

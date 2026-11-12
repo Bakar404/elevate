@@ -1,4 +1,4 @@
-import { copilotWorkFromEvents } from "@elevate/github";
+import { copilotWorkFromEvents, summarizeChecks, type PrStatus } from "@elevate/github";
 import { WriteRefused, type WriteAction } from "@elevate/policy";
 import { describe, expect, it } from "vitest";
 import {
@@ -90,7 +90,8 @@ describe("TB3: every GitHub write goes through the guard", () => {
       verdict: "forbidden",
     });
     await expect(github.authorizePush("Bakar404/demo", "main")).rejects.toMatchObject({ verdict: "forbidden" });
-    await expect(github.authorize("merge_pr", "Bakar404/demo")).rejects.toMatchObject({ verdict: "forbidden" });
+    await expect(github.authorize("merge_pr", "Bakar404/demo")).rejects.toMatchObject({ verdict: "not_approved" });
+    await expect(github.mergePr("Bakar404/demo", 1, { consent: true })).rejects.toMatchObject({ verdict: "not_approved" });
     expect(fake.writes).toEqual([]);
   });
 
@@ -215,12 +216,76 @@ describe("publish swarm PRs as you", () => {
     expect(warnings.join(" ")).toMatch(/kept Copilot's pull request/i);
   });
 
-  it("the guard refuses squashing onto the default branch and closing PRs without approval", async () => {
+  it("the guard refuses squashing onto the default branch and closing the swarm's PR without your consent", async () => {
     const { fake, github } = setup({ status: "in_progress", allowSwarm: true });
     await expect(github.squashPr("Bakar404/demo", 2, { branch: "main", message: "m" })).rejects.toMatchObject({ verdict: "forbidden" });
     const refused = setup({ status: "pr_opened", allowSwarm: true });
-    await expect(refused.github.closePr("Bakar404/demo", 2)).rejects.toMatchObject({ verdict: "not_approved" });
+    await expect(refused.github.closePr("Bakar404/demo", 2)).rejects.toMatchObject({ verdict: "no_consent" });
     expect([...fake.writes, ...refused.fake.writes]).toEqual([]);
+  });
+});
+
+describe("merging the swarm's PR (M1–M3)", () => {
+  const passed = { name: "ci", state: "passed" as const, url: null };
+
+  it("merges an open PR you consented to at the commit it checked, then deletes its branch", async () => {
+    const { fake, github, audits } = setup({ status: "pr_opened", allowSwarm: true });
+    const pr = await fake.openDraftPr("Bakar404/demo", { head: "elevate/add-pbt", base: "main", title: "t" });
+    const out = await github.mergePr("Bakar404/demo", pr.number, { consent: true });
+    expect(out).toMatchObject({ method: "squash", branchDeleted: true, status: { headSha: `head${pr.number}` } });
+    expect(fake.writes.at(-1)).toMatchObject({ op: "mergePr", detail: { pr: pr.number, sha: `head${pr.number}`, deleteBranch: "elevate/add-pbt" } });
+    expect(audits.at(-1)).toMatchObject({ action: "merge_pr", verdict: "allow" });
+  });
+
+  it("refuses without consent, without a passing check, with a failing or pending check, or with conflicts", async () => {
+    const cases: [Partial<PrStatus>, boolean, string][] = [
+      [{}, false, "no_consent"],
+      [{ checks: [] }, true, "not_verified"],
+      [{ checks: [passed, { name: "lint", state: "failing", url: null }] }, true, "not_verified"],
+      [{ checks: [passed, { name: "proof", state: "pending", url: null }] }, true, "not_verified"],
+      [{ checks: [passed, { name: "skipped", state: "neutral", url: null }], mergeable: false, mergeableState: "dirty" }, true, "not_verified"],
+    ];
+    for (const [status, consent, verdict] of cases) {
+      const { fake, github } = setup({ status: "pr_opened", allowSwarm: true });
+      fake.prStates.set(7, status);
+      await expect(github.mergePr("Bakar404/demo", 7, { consent })).rejects.toMatchObject({ verdict });
+      expect(fake.writes).toEqual([]);
+    }
+  });
+
+  it("still needs the repo allowed and the PR in the swarm's repo", async () => {
+    const off = setup({ status: "pr_opened", allowSwarm: false });
+    await expect(off.github.mergePr("Bakar404/demo", 7, { consent: true })).rejects.toMatchObject({ verdict: "repo_not_allowed" });
+    const on = setup({ status: "pr_opened", allowSwarm: true });
+    await expect(on.github.mergePr("someone/else", 7, { consent: true })).rejects.toMatchObject({ verdict: "wrong_repo" });
+    await expect(on.github.closePr("Bakar404/demo", 7, { consent: true })).resolves.toBeUndefined();
+    expect(on.fake.writes.map((w) => w.op)).toEqual(["closePr"]);
+  });
+
+  it("never deletes the default branch or a fork's branch", async () => {
+    const { fake, github } = setup({ status: "pr_opened", allowSwarm: true });
+    fake.prStates.set(7, { headRef: "main" });
+    fake.prStates.set(8, { headRef: "feature", sameRepoHead: false });
+    await github.mergePr("Bakar404/demo", 7, { consent: true });
+    await github.mergePr("Bakar404/demo", 8, { consent: true });
+    expect(fake.writes.map((w) => w.detail.deleteBranch)).toEqual([undefined, undefined]);
+  });
+});
+
+describe("summarizeChecks", () => {
+  it("keeps the latest run per check name, counts skipped as neutral, and blocks on failing or unfinished checks", () => {
+    const run = (id: number, name: string, status: string, conclusion: string | null) => ({ id, name, status, conclusion, html_url: null });
+    const s = summarizeChecks(
+      [run(1, "proof", "completed", "skipped"), run(3, "proof", "completed", "success"), run(2, "check", "completed", "success"), run(4, "lint", "completed", "skipped")],
+      [],
+    );
+    expect(s.checks.map((c) => `${c.name}:${c.state}`)).toEqual(["check:passed", "lint:neutral", "proof:passed"]);
+    expect(s).toMatchObject({ passed: 2, blocking: 0 });
+    const failing = summarizeChecks([run(5, "check", "completed", "success"), run(6, "e2e", "in_progress", null)], [
+      { context: "deploy", state: "failure", target_url: "https://x" },
+    ]);
+    expect(failing).toMatchObject({ passed: 1, blocking: 2 });
+    expect(summarizeChecks([run(7, "a", "completed", "timed_out"), run(8, "b", "completed", "cancelled")], []).blocking).toBe(2);
   });
 });
 

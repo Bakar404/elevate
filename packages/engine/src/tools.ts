@@ -101,7 +101,7 @@ export function chatTools(ctx: Ctx): ToolSpec[] {
       name: "list_recommendations",
       description: "List recommendations. Status 'open' is the inbox (passed both gates, awaiting the user's decision).",
       parameters: z.object({
-        status: z.enum(["candidate", "gated_out", "open", "approved", "rejected", "in_progress", "pr_opened", "failed"]).optional(),
+        status: z.enum(["candidate", "gated_out", "open", "approved", "rejected", "in_progress", "pr_opened", "merged", "closed", "failed"]).optional(),
       }),
       handler: async ({ status }) => {
         const rows = await ctx.db

@@ -2,7 +2,7 @@
 //!
 //! A model of `packages/policy/src` (gates, lifecycle, write guard). Each
 //! `ensures` clause and lemma is one requirement from ../intent.md, tagged
-//! with its id (L1, S3, T7, W2, ...) so the mutation check can tell which
+//! with its id (L1, S3, T7, W2, M1, ...) so the mutation check can tell which
 //! requirement caught a planted bug. Everything inside `verus!` is checked;
 //! the `extern "C"` shim at the bottom is outside it and is trusted (TB1).
 
@@ -159,6 +159,8 @@ pub enum Status {
     InProgress,
     PrOpened,
     Failed,
+    Merged,
+    Closed,
 }
 
 #[derive(Clone, Copy)]
@@ -173,11 +175,14 @@ pub enum Event {
     Retry,
     Regate,
     Reopen,
+    Merge,
+    Close,
 }
 
 /// Past your approval: approved, running, or finished either way.
 pub open spec fn cleared(s: Status) -> bool {
     s == Status::Approved || s == Status::InProgress || s == Status::PrOpened || s == Status::Failed
+        || s == Status::Merged || s == Status::Closed
 }
 
 pub fn transition(s: Status, e: Event) -> (r: Option<Status>)
@@ -186,16 +191,22 @@ pub fn transition(s: Status, e: Event) -> (r: Option<Status>)
         r == Some(Status::Approved) ==> (s == Status::Open && e == Event::Approve) || (s == Status::Failed && e == Event::Retry), // T1
         // T2. A swarm starts only from approved.
         r == Some(Status::InProgress) ==> s == Status::Approved && e == Event::Start, // T2
-        // T2. A PR or a failure only comes from a running swarm.
-        (r == Some(Status::PrOpened) || r == Some(Status::Failed)) ==> s == Status::InProgress, // T2
+        // T2. A failure only comes from a running swarm.
+        r == Some(Status::Failed) ==> s == Status::InProgress, // T2
+        // T2. A PR only comes from a running swarm, or from that PR being reopened after it was closed.
+        r == Some(Status::PrOpened) ==> s == Status::InProgress || (s == Status::Closed && e == Event::Pr), // T2
         // T3. Nothing reaches the inbox without passing the gates.
         r == Some(Status::Open) ==> s == Status::Candidate && e == Event::GatePass, // T3
         // T4. Gated out can only go back to candidate, to be checked again.
         s == Status::GatedOut ==> (r == None::<Status> || r == Some(Status::Candidate)), // T4
-        // T5. A draft PR is the end.
-        s == Status::PrOpened ==> r == None::<Status>, // T5
-        // T6. A rejected recommendation reopens as a candidate, to be re-gated.
-        s == Status::Rejected && e == Event::Reopen ==> r == Some(Status::Candidate), // T6
+        // T5. An open PR ends only by being merged or closed.
+        s == Status::PrOpened ==> r == None::<Status> || (e == Event::Merge && r == Some(Status::Merged)) || (e == Event::Close && r == Some(Status::Closed)), // T5
+        // T6. A rejected recommendation, or one whose PR was closed, reopens as a candidate, to be re-gated.
+        (s == Status::Rejected || s == Status::Closed) && e == Event::Reopen ==> r == Some(Status::Candidate), // T6
+        // T8. A merged PR is the end.
+        s == Status::Merged ==> r == None::<Status>, // T8
+        // T8. Only an open PR is merged or closed.
+        (r == Some(Status::Merged) || r == Some(Status::Closed)) ==> s == Status::PrOpened, // T8
 {
     match s {
         Status::Candidate => match e {
@@ -232,7 +243,17 @@ pub fn transition(s: Status, e: Event) -> (r: Option<Status>)
             Event::Reopen => Some(Status::Candidate),
             _ => None,
         },
-        Status::PrOpened => None,
+        Status::PrOpened => match e {
+            Event::Merge => Some(Status::Merged),
+            Event::Close => Some(Status::Closed),
+            _ => None,
+        },
+        Status::Merged => None,
+        Status::Closed => match e {
+            Event::Reopen => Some(Status::Candidate),
+            Event::Pr => Some(Status::PrOpened),
+            _ => None,
+        },
     }
 }
 
@@ -248,7 +269,7 @@ pub open spec fn ends_cleared(r: Option<Status>) -> bool {
 /// starts a swarm.
 pub fn replay(events: &Vec<Event>) -> (r: Option<Status>)
     ensures
-        // T7. No swarm without both gates and your approval: a history that ends approved, running or finished passed the gates, then was approved.
+        // T7. No swarm without both gates and your approval: a history that ends approved, running or finished (failed, PR open, merged or closed) passed the gates, then was approved.
         ends_cleared(r) ==> exists|i: int, j: int| 0 <= i < j < events.len() && events[i] == Event::GatePass && events[j] == Event::Approve, // T7
 {
     let mut cur = Status::Candidate;
@@ -307,6 +328,8 @@ pub enum Verdict {
     WrongRepo,
     NotDraft,
     BudgetExhausted,
+    NoConsent,
+    NotVerified,
 }
 
 pub struct WriteRequest {
@@ -315,6 +338,10 @@ pub struct WriteRequest {
     pub allow_swarm: bool,
     pub same_repo: bool,
     pub draft: bool,
+    pub consent: bool,
+    pub checks_passed: u32,
+    pub checks_blocking: u32,
+    pub mergeable: bool,
     pub tasks_used: u32,
     pub max_tasks: u32,
     pub minutes_used: u32,
@@ -324,7 +351,7 @@ pub struct WriteRequest {
 }
 
 pub open spec fn forbidden(a: Action) -> bool {
-    a == Action::MergePr || a == Action::PushDefaultBranch || a == Action::ForcePush
+    a == Action::PushDefaultBranch || a == Action::ForcePush
 }
 
 pub open spec fn spends(a: Action) -> bool {
@@ -339,17 +366,30 @@ pub open spec fn within_budget(q: WriteRequest) -> bool {
     q.tasks_used < q.max_tasks && q.minutes_used < q.max_minutes && q.turns_used < q.max_turns
 }
 
+/// Finishing the swarm's own PR once it is open: merging it or closing it.
+pub open spec fn finishing(q: WriteRequest) -> bool {
+    q.status == Status::PrOpened && (q.action == Action::MergePr || q.action == Action::ClosePr)
+}
+
+/// GitHub verified the PR: at least one check passed, none failed or is still running, and it merges cleanly.
+pub open spec fn verified(q: WriteRequest) -> bool {
+    q.checks_passed > 0 && q.checks_blocking == 0 && q.mergeable
+}
+
 pub open spec fn may_write(q: WriteRequest) -> bool {
-    !forbidden(q.action) && approved(q.status) && q.allow_swarm && q.same_repo
-        && (q.action == Action::OpenPr ==> q.draft) && (spends(q.action) ==> within_budget(q))
+    !forbidden(q.action) && q.allow_swarm && q.same_repo && if finishing(q) {
+        q.consent && (q.action == Action::MergePr ==> verified(q))
+    } else {
+        approved(q.status) && q.action != Action::MergePr && (q.action == Action::OpenPr ==> q.draft) && (spends(q.action) ==> within_budget(q))
+    }
 }
 
 pub fn authorize_write(q: &WriteRequest) -> (v: Verdict)
     ensures
-        // W1. Never merge, push to the default branch, or force-push.
+        // W1. Never push to the default branch or force-push.
         forbidden(q.action) ==> v == Verdict::Forbidden, // W1
-        // W2. No write until you approve.
-        !approved(q.status) ==> v != Verdict::Allow, // W2
+        // W2. No write until you approve, except finishing the swarm's own open PR (M1-M3).
+        !approved(q.status) && !finishing(*q) ==> v != Verdict::Allow, // W2
         // W3. Only repos you opted in.
         !q.allow_swarm ==> v != Verdict::Allow, // W3
         // W4. Only the recommendation's own repo.
@@ -360,24 +400,57 @@ pub fn authorize_write(q: &WriteRequest) -> (v: Verdict)
         spends(q.action) && !within_budget(*q) ==> v != Verdict::Allow, // W6
         // W7. Otherwise the write is allowed, and only then.
         (v == Verdict::Allow) == may_write(*q), // W7
+        // M1. Only an open PR is merged: never mid-run, never before the swarm opened it.
+        q.action == Action::MergePr && q.status != Status::PrOpened ==> v != Verdict::Allow, // M1
+        // M2. Merging or closing the PR needs your consent: your click, or auto-merge turned on.
+        finishing(*q) && !q.consent ==> v != Verdict::Allow, // M2
+        // M3. Only a verified PR is merged: a check passed, none failed or is pending, no conflicts.
+        q.action == Action::MergePr && !verified(*q) ==> v != Verdict::Allow, // M3
 {
     match q.action {
-        Action::MergePr | Action::PushDefaultBranch | Action::ForcePush => {
+        Action::PushDefaultBranch | Action::ForcePush => {
             return Verdict::Forbidden;
         },
         _ => {},
     }
-    match q.status {
-        Status::Approved | Status::InProgress => {},
-        _ => {
+    let merging = match q.action {
+        Action::MergePr => true,
+        _ => false,
+    };
+    let closing = match q.action {
+        Action::ClosePr => true,
+        _ => false,
+    };
+    let pr_open = match q.status {
+        Status::PrOpened => true,
+        _ => false,
+    };
+    let finishing = pr_open && (merging || closing);
+    if !finishing {
+        match q.status {
+            Status::Approved | Status::InProgress => {},
+            _ => {
+                return Verdict::NotApproved;
+            },
+        }
+        if merging {
             return Verdict::NotApproved;
-        },
+        }
     }
     if !q.allow_swarm {
         return Verdict::RepoNotAllowed;
     }
     if !q.same_repo {
         return Verdict::WrongRepo;
+    }
+    if finishing {
+        if !q.consent {
+            return Verdict::NoConsent;
+        }
+        if merging && (q.checks_passed == 0 || q.checks_blocking > 0 || !q.mergeable) {
+            return Verdict::NotVerified;
+        }
+        return Verdict::Allow;
     }
     match q.action {
         Action::OpenPr => {
@@ -419,7 +492,9 @@ fn status_of(c: u32) -> Status {
         4 => Status::Rejected,
         5 => Status::InProgress,
         6 => Status::PrOpened,
-        _ => Status::Failed,
+        7 => Status::Failed,
+        8 => Status::Merged,
+        _ => Status::Closed,
     }
 }
 
@@ -433,6 +508,8 @@ fn status_code(s: Status) -> u32 {
         Status::InProgress => 5,
         Status::PrOpened => 6,
         Status::Failed => 7,
+        Status::Merged => 8,
+        Status::Closed => 9,
     }
 }
 
@@ -447,7 +524,9 @@ fn event_of(c: u32) -> Event {
         6 => Event::Fail,
         7 => Event::Retry,
         8 => Event::Regate,
-        _ => Event::Reopen,
+        9 => Event::Reopen,
+        10 => Event::Merge,
+        _ => Event::Close,
     }
 }
 
@@ -499,7 +578,7 @@ pub extern "C" fn replay_code(packed: u64) -> u32 {
 }
 
 /// Action codes follow the enum; anything above 9 is force_push. Result is
-/// the verdict code (0 allow ... 6 budget exhausted).
+/// the verdict code (0 allow ... 8 not verified).
 #[no_mangle]
 pub extern "C" fn authorize_code(
     action: u32,
@@ -507,6 +586,10 @@ pub extern "C" fn authorize_code(
     allow_swarm: u32,
     same_repo: u32,
     draft: u32,
+    consent: u32,
+    checks_passed: u32,
+    checks_blocking: u32,
+    mergeable: u32,
     tasks_used: u32,
     max_tasks: u32,
     minutes_used: u32,
@@ -532,6 +615,10 @@ pub extern "C" fn authorize_code(
         allow_swarm: allow_swarm != 0,
         same_repo: same_repo != 0,
         draft: draft != 0,
+        consent: consent != 0,
+        checks_passed,
+        checks_blocking,
+        mergeable: mergeable != 0,
         tasks_used,
         max_tasks,
         minutes_used,
@@ -547,5 +634,7 @@ pub extern "C" fn authorize_code(
         Verdict::WrongRepo => 4,
         Verdict::NotDraft => 5,
         Verdict::BudgetExhausted => 6,
+        Verdict::NoConsent => 7,
+        Verdict::NotVerified => 8,
     }
 }

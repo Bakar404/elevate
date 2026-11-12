@@ -58,7 +58,7 @@ A calm, dark work surface over a living, dithered landscape. The background carr
     - dashed and marching: still being gated
     - olive with one particle: awaiting approval
     - sky with two fast particles: swarm running
-    - sand: draft PR open
+    - sand: PR open
   - A repo that is being worked on, or that has recommendations waiting, pulses.
   - Hovering a node dims everything that isn't connected to it.
   - All motion is SVG/SMIL and CSS and stops under `prefers-reduced-motion`.

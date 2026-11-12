@@ -1,7 +1,7 @@
 "use client";
 
 import { KeyRound, Plug, SlidersHorizontal } from "lucide-react";
-import { useEffect, useState } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 import { toast } from "sonner";
 import { EXECUTORS, cn, send } from "@/lib/utils";
 import { ModelPicker, useModels } from "./model-picker";
@@ -18,6 +18,7 @@ type Settings = {
   thresholds: { legitimacy: number; priorFloor: number; soundness: number };
   budget: { maxTasks: number; maxMinutes: number; maxAgentTurns: number };
   publishAsMe: boolean;
+  autoMerge: boolean;
   access: {
     provider: string;
     listed: boolean;
@@ -48,6 +49,11 @@ export function SettingsForm() {
   useEffect(() => {
     load();
   }, []);
+  // The form renders after it loads, too late for the browser's own jump to /settings#auto-merge or #access.
+  const loaded = s !== null;
+  useEffect(() => {
+    if (loaded && location.hash) document.getElementById(decodeURIComponent(location.hash.slice(1)))?.scrollIntoView({ block: "start" });
+  }, [loaded]);
 
   if (!s) return <Card className="mt-8 h-96 animate-pulse" />;
 
@@ -222,7 +228,7 @@ export function SettingsForm() {
           <span className="text-xs text-faint">via {s.github.source}</span>
         </div>
         <p className="mt-1 text-sm text-muted">
-          Read access indexes your repos. Writes (issues, branches, draft PRs) only happen inside an approved swarm, on repos you allow. Uses the
+          Read access indexes your repos. Writes (issues, branches, PRs, merges) only happen inside an approved swarm, on repos you allow. Uses the
           <span className="font-mono"> gh </span>CLI login or <span className="font-mono">GITHUB_TOKEN</span> unless you store a token here.
         </p>
         {!s.github.connected && s.github.error && <p className="mt-2 text-xs text-danger">{s.github.error}</p>}
@@ -326,40 +332,30 @@ export function SettingsForm() {
               ))}
             </select>
           </label>
-          <div className="flex items-start justify-between gap-4 rounded-lg border border-line bg-bg/40 p-3 sm:col-span-3">
-            <div className="min-w-0">
-              <p className="text-sm text-fg" id="publish-as-me-label">
-                Publish swarm PRs as me
-              </p>
-              <p className="mt-0.5 text-xs text-muted">
-                When the Copilot coding agent finishes, elevate squashes its work into one commit under your account, opens the draft PR as you, and closes
-                Copilot&apos;s PR. Turn off to keep Copilot&apos;s PR as it is.
-              </p>
-            </div>
-            <button
-              type="button"
-              role="switch"
-              aria-checked={s.publishAsMe}
-              aria-labelledby="publish-as-me-label"
-              data-testid="publish-as-me"
-              onClick={() => {
-                const publishAsMe = !s.publishAsMe;
-                setS({ ...s, publishAsMe });
-                void save({ publishAsMe }, publishAsMe ? "Swarm PRs will be published as you" : "Swarm PRs stay under Copilot");
-              }}
-              className={cn(
-                "relative mt-0.5 inline-flex h-6 w-11 shrink-0 items-center rounded-full border transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-sky",
-                s.publishAsMe ? "border-sky/60 bg-sky/30" : "border-line-strong bg-bg/60",
-              )}
-            >
-              <span
-                className={cn(
-                  "inline-block size-4 rounded-full bg-fg shadow transition-transform duration-200 motion-reduce:transition-none",
-                  s.publishAsMe ? "translate-x-6" : "translate-x-1",
-                )}
-              />
-            </button>
-          </div>
+          <SettingSwitch
+            id="publish-as-me"
+            title="Publish swarm PRs as me"
+            checked={s.publishAsMe}
+            onChange={(publishAsMe) => {
+              setS({ ...s, publishAsMe });
+              void save({ publishAsMe }, publishAsMe ? "Swarm PRs will be published as you" : "Swarm PRs stay under Copilot");
+            }}
+          >
+            When the Copilot coding agent finishes, elevate squashes its work into one commit under your account, opens the draft PR as you, and closes
+            Copilot&apos;s PR. Turn off to keep Copilot&apos;s PR as it is.
+          </SettingSwitch>
+          <SettingSwitch
+            id="auto-merge"
+            title="Auto-merge verified PRs"
+            checked={s.autoMerge}
+            onChange={(autoMerge) => {
+              setS({ ...s, autoMerge });
+              void save({ autoMerge }, autoMerge ? "elevate will merge swarm PRs once their checks pass" : "Swarm PRs wait for you to merge them");
+            }}
+          >
+            elevate checks each swarm PR every few minutes. With this on, it squash-merges a PR on its own once at least one check passed, none are failing or
+            running, and GitHub says it can merge; then it deletes the branch. Off, the PR waits for you to click Merge. Only repos that allow swarms.
+          </SettingSwitch>
         </div>
         <div className="mt-4 flex justify-end">
           <Button size="sm" variant="primary" onClick={() => save({ thresholds: s.thresholds, budget: s.budget, executor: s.executor }, "Gates and budget saved")}>
@@ -367,6 +363,36 @@ export function SettingsForm() {
           </Button>
         </div>
       </Card>
+    </div>
+  );
+}
+
+/** A labelled on/off switch that saves as soon as it's flipped. `id` is also the page anchor and test id. */
+function SettingSwitch({ id, title, checked, onChange, children }: { id: string; title: string; checked: boolean; onChange: (on: boolean) => void; children: ReactNode }) {
+  return (
+    <div id={id} className="flex scroll-mt-6 items-start justify-between gap-4 rounded-lg border border-line bg-bg/40 p-3 sm:col-span-3">
+      <div className="min-w-0">
+        <p className="text-sm text-fg" id={`${id}-label`}>
+          {title}
+        </p>
+        <p className="mt-0.5 text-xs text-muted">{children}</p>
+      </div>
+      <button
+        type="button"
+        role="switch"
+        aria-checked={checked}
+        aria-labelledby={`${id}-label`}
+        data-testid={id}
+        onClick={() => onChange(!checked)}
+        className={cn(
+          "relative mt-0.5 inline-flex h-6 w-11 shrink-0 items-center rounded-full border transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-sky",
+          checked ? "border-sky/60 bg-sky/30" : "border-line-strong bg-bg/60",
+        )}
+      >
+        <span
+          className={cn("inline-block size-4 rounded-full bg-fg shadow transition-transform duration-200 motion-reduce:transition-none", checked ? "translate-x-6" : "translate-x-1")}
+        />
+      </button>
     </div>
   );
 }

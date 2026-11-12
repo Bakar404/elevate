@@ -1,6 +1,6 @@
 import { copilotLogin } from "@elevate/agent";
-import { deleteSecret, getSecret, getSetting, setSecret, setSetting, audit } from "@elevate/db";
-import { accessProfile, DEFAULT_BUDGET, ECOSYSTEMS, ECOSYSTEM_LABEL, modelPrefs, recheckAccess, setAccessOverrides, publishAsMe, resetGitHubClient, resolveModelConfig, setModelPrefs, swarmBudget, thresholds } from "@elevate/engine";
+import { deleteSecret, enqueue, getSecret, getSetting, setSecret, setSetting, audit } from "@elevate/db";
+import { accessProfile, autoMerge, DEFAULT_BUDGET, ECOSYSTEMS, ECOSYSTEM_LABEL, modelPrefs, recheckAccess, setAccessOverrides, publishAsMe, resetGitHubClient, resolveModelConfig, setModelPrefs, swarmBudget, thresholds } from "@elevate/engine";
 import { ghAccountToken, GITHUB_ACCOUNT_SETTING, resolveGitHubToken } from "@elevate/github";
 import { NextResponse } from "next/server";
 import { z } from "zod";
@@ -67,6 +67,7 @@ export const GET = route(async (ctx) => {
     thresholds: await thresholds(ctx),
     budget: await swarmBudget(ctx),
     publishAsMe: await publishAsMe(ctx),
+    autoMerge: await autoMerge(ctx),
     defaults: { budget: DEFAULT_BUDGET },
   };
 });
@@ -86,6 +87,8 @@ const Put = z.object({
   thresholds: z.object({ legitimacy: z.number().int().min(0).max(100), priorFloor: z.number().int().min(0).max(100), soundness: z.number().int().min(0).max(100) }).partial().optional(),
   budget: z.object({ maxTasks: z.number().int().min(1).max(20), maxMinutes: z.number().int().min(5).max(600), maxAgentTurns: z.number().int().min(1).max(200) }).partial().optional(),
   publishAsMe: z.boolean().optional(),
+  /** Merge swarm PRs once every check passed and GitHub can merge them. */
+  autoMerge: z.boolean().optional(),
   /** true/false = the user's own switch; null = go back to what the connection implies. */
   access: z.partialRecord(z.enum(ECOSYSTEMS), z.boolean().nullable()).optional(),
 });
@@ -110,6 +113,11 @@ export const PUT = route(async (ctx, req) => {
   if (p.executor) await setSetting(ctx.db, "executor.default", p.executor);
   if (p.thresholds) await setSetting(ctx.db, "gates.thresholds", { ...(await getSetting(ctx.db, "gates.thresholds", {})), ...p.thresholds });
   if (p.publishAsMe !== undefined) await setSetting(ctx.db, "swarm.publishAsMe", p.publishAsMe);
+  if (p.autoMerge !== undefined) {
+    await setSetting(ctx.db, "swarm.autoMerge", p.autoMerge);
+    // Merge PRs that are already verified now, not at the next scheduled check.
+    if (p.autoMerge) await enqueue(ctx.db, "prs.track", {}, { dedupeKey: "prs.track" });
+  }
   if (p.budget) await setSetting(ctx.db, "swarm.budget", { ...(await getSetting(ctx.db, "swarm.budget", {})), ...p.budget });
   if (p.access) await setAccessOverrides(ctx, p.access);
   // What the user can act on may have changed: pick up techniques that were held back.

@@ -1,3 +1,4 @@
+import type { PrStatus } from "@elevate/github";
 import type { AgentWork, GitHubWriter } from "./guard";
 import { topoOrder, issueBody, type Executor, type SwarmOutcome, type SwarmRun } from "./types";
 
@@ -8,6 +9,9 @@ export class FakeGitHub implements GitHubWriter {
   readonly writes: FakeWrite[] = [];
   private n = 0;
   private prs = new Map<number, { url: string; number: number; draft: boolean; state: string }[]>();
+  private opened = new Map<number, { head: string; base: string; title: string }>();
+  /** Scripted PR status by number. Anything unset reads as an open draft whose one check passed. */
+  readonly prStates = new Map<number, Partial<PrStatus>>();
 
   async createIssue(fullName: string, title: string) {
     const number = ++this.n;
@@ -32,6 +36,7 @@ export class FakeGitHub implements GitHubWriter {
   async openDraftPr(fullName: string, o: { head: string; base: string; title: string }) {
     const number = ++this.n;
     this.writes.push({ op: "openDraftPr", fullName, detail: { ...o, number } });
+    this.opened.set(number, { head: o.head, base: o.base, title: o.title });
     return { url: `https://github.com/${fullName}/pull/${number}`, number };
   }
   async linkedPrs(_fullName: string, issue: number) {
@@ -49,6 +54,38 @@ export class FakeGitHub implements GitHubWriter {
   }
   async closePr(fullName: string, pr: number) {
     this.writes.push({ op: "closePr", fullName, detail: { pr } });
+    this.prStates.set(pr, { ...this.prStates.get(pr), state: "closed", closedAt: new Date().toISOString() });
+  }
+  async prStatus(fullName: string, pr: number): Promise<PrStatus> {
+    const s = this.prStates.get(pr) ?? {};
+    const o = this.opened.get(pr);
+    const state = s.state ?? "open";
+    const checks = s.checks ?? [{ name: "ci", state: "passed" as const, url: null }];
+    return {
+      number: pr,
+      url: `https://github.com/${fullName}/pull/${pr}`,
+      title: o?.title ?? `Pull request ${pr}`,
+      state,
+      draft: state === "open",
+      mergeable: state === "open",
+      mergeableState: state === "open" ? "draft" : "unknown",
+      headSha: `head${pr}`,
+      headRef: o?.head ?? `agent/pr-${pr}`,
+      baseRef: o?.base ?? "main",
+      sameRepoHead: true,
+      checks,
+      passed: checks.filter((c) => c.state === "passed").length,
+      blocking: checks.filter((c) => c.state === "failing" || c.state === "pending").length,
+      awaitingApproval: 0,
+      mergedAt: null,
+      closedAt: null,
+      ...s,
+    };
+  }
+  async mergePr(fullName: string, pr: number, o: { sha: string; deleteBranch?: string }) {
+    this.writes.push({ op: "mergePr", fullName, detail: { pr, ...o } });
+    this.prStates.set(pr, { ...this.prStates.get(pr), state: "merged", draft: false, mergeable: false, mergedAt: new Date().toISOString() });
+    return { sha: `merge${++this.n}`, method: "squash", branchDeleted: Boolean(o.deleteBranch) };
   }
 }
 

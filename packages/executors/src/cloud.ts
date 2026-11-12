@@ -17,7 +17,7 @@ async function waitForPr(run: SwarmRun, issue: number, label: string): Promise<s
     const prs = await run.github.linkedPrs(run.repo.fullName, issue);
     const pr = prs.find((p) => p.state === "open") ?? prs[0];
     if (pr) {
-      if (!pr.draft) await run.log(`${label} opened ${pr.url} as ready for review; elevate never merges it`, "warn");
+      if (!pr.draft) await run.log(`${label} opened ${pr.url} as ready for review; elevate follows its checks and merges it only with your consent`, "warn");
       return pr.url;
     }
     // The guard refuses new agent work past the budget; here we just stop waiting at the same limit.

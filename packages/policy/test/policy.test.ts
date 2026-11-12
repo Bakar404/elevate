@@ -36,7 +36,41 @@ describe("the rules, by example", () => {
     };
     expect(authorizeWrite(q)).toBe("allow");
     expect(authorizeWrite({ ...q, action: "assign_agent" })).toBe("budget_exhausted");
-    expect(authorizeWrite({ ...q, action: "merge_pr" })).toBe("forbidden");
+    expect(authorizeWrite({ ...q, action: "merge_pr" })).toBe("not_approved");
+    expect(authorizeWrite({ ...q, action: "force_push" })).toBe("forbidden");
+  });
+  it("a swarm's PR is merged only once it is open, with your consent, and verified by its checks (M1–M3)", () => {
+    const q: WriteRequest = {
+      action: "merge_pr",
+      status: "pr_opened",
+      allowSwarm: true,
+      sameRepo: true,
+      draft: true,
+      consent: true,
+      checksPassed: 2,
+      checksBlocking: 0,
+      mergeable: true,
+      usage: { tasks: 5, minutes: 90, agentTurns: 200 },
+      budget: { maxTasks: 5, maxMinutes: 60, maxAgentTurns: 200 },
+    };
+    expect(authorizeWrite(q)).toBe("allow");
+    expect(authorizeWrite({ ...q, status: "in_progress" })).toBe("not_approved");
+    expect(authorizeWrite({ ...q, consent: false })).toBe("no_consent");
+    expect(authorizeWrite({ ...q, checksPassed: 0 })).toBe("not_verified");
+    expect(authorizeWrite({ ...q, checksBlocking: 1 })).toBe("not_verified");
+    expect(authorizeWrite({ ...q, mergeable: false })).toBe("not_verified");
+    expect(authorizeWrite({ ...q, allowSwarm: false })).toBe("repo_not_allowed");
+    // Closing changes no code, so it needs your consent but not passing checks.
+    expect(authorizeWrite({ ...q, action: "close_pr", checksPassed: 0, mergeable: false })).toBe("allow");
+    expect(authorizeWrite({ ...q, action: "close_pr", consent: false })).toBe("no_consent");
+    expect(authorizeWrite({ ...q, action: "push_branch" })).toBe("not_approved");
+  });
+  it("a merged PR is the end; a closed one can be reopened on GitHub or re-gated (T5, T6, T8)", () => {
+    expect(replay(["gate_pass", "approve", "start", "pr", "merge"])).toBe("merged");
+    expect(replay(["gate_pass", "approve", "start", "pr", "merge", "reopen"])).toBeNull();
+    expect(replay(["gate_pass", "approve", "start", "pr", "close", "pr", "merge"])).toBe("merged");
+    expect(replay(["gate_pass", "approve", "start", "pr", "close", "reopen"])).toBe("candidate");
+    expect(replay(["gate_pass", "approve", "start", "merge"])).toBeNull();
   });
   it("an unknown action string from untyped input is forbidden", () => {
     expect(authorizeWrite({ action: "delete_repo" as never, status: "approved", allowSwarm: true, sameRepo: true, draft: true, usage: { tasks: 0, minutes: 0, agentTurns: 0 }, budget: { maxTasks: 1, maxMinutes: 1, maxAgentTurns: 1 } })).toBe("forbidden");

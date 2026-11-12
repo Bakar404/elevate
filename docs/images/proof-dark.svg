@@ -19,7 +19,7 @@
   <rect x="32" y="80" width="196" height="64" rx="12" fill="#14181e" stroke="rgba(255,255,255,0.15)" stroke-opacity="1"/>
   
   <text x="46" y="101" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Inter, Helvetica, Arial, sans-serif" font-size="10" letter-spacing="0.08em" fill="#767e8a">INTENT</text>
-  <text x="46" y="121" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Inter, Helvetica, Arial, sans-serif" font-size="14" font-weight="600" fill="#eef1f5">26 requirements</text>
+  <text x="46" y="121" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Inter, Helvetica, Arial, sans-serif" font-size="14" font-weight="600" fill="#eef1f5">30 requirements</text>
   <text x="46" y="137" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Inter, Helvetica, Arial, sans-serif" font-size="11.5" fill="#a6aeb9">plain words</text>
 </g>
 <path d="M 228 112 L 256 112" fill="none" stroke="rgba(255,255,255,0.15)" stroke-opacity="1" stroke-width="1.5" class="flow" stroke-linecap="round"/>

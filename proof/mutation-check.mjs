@@ -1,12 +1,12 @@
 // The mutation check: plant one bug per requirement in a scratch copy of
 // verified/src/lib.rs and require Verus to reject it on that requirement's
 // clause. A mutant that proves means its clause rules out nothing.
-// Then show the gap a draft spec leaves: the guard's safety clauses (W1-W6)
-// alone allow a guard that refuses everything; W7 closes it.
+// Then show the gap a draft spec leaves: the guard's safety clauses (W1-W6,
+// M1-M3) alone allow a guard that refuses everything; W7 closes it.
 //
 //   node proof/mutation-check.mjs [--json proof/results/mutation.json]
 //
-// VERUS overrides the verus binary (default %TEMP%\verus\verus-arm64-win).
+// VERUS overrides the verus binary (default %TEMP%\verus\verus-<arm64|x86>-win).
 import { spawnSync } from "node:child_process";
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { homedir, tmpdir } from "node:os";
@@ -17,7 +17,10 @@ const here = dirname(fileURLToPath(import.meta.url));
 const source = readFileSync(join(here, "verified", "src", "lib.rs"), "utf8").replace(/\r\n/g, "\n");
 // Results are committed, so keep machine-specific path prefixes out of them.
 const redact = (p) => [[process.env.TEMP ?? tmpdir(), "%TEMP%"], [tmpdir(), "%TEMP%"], [homedir(), "~"]].reduce((s, [from, to]) => (from && s.startsWith(from) ? to + s.slice(from.length) : s), p);
-const verus = process.env.VERUS ?? join(process.env.TEMP ?? tmpdir(), "verus", "verus-arm64-win", "verus.exe");
+const arm = process.arch === "arm64";
+export const DEFAULT_VERUS = join(process.env.TEMP ?? tmpdir(), "verus", `verus-${arm ? "arm64" : "x86"}-win`, "verus.exe");
+export const DEFAULT_TOOLCHAIN = `1.99.1-${arm ? "aarch64" : "x86_64"}-pc-windows-msvc`;
+const verus = process.env.VERUS ?? DEFAULT_VERUS;
 const jsonOut = process.argv.includes("--json") ? process.argv[process.argv.indexOf("--json") + 1] : null;
 
 /** Each edit: find (exactly once, or the nth / all occurrences) → replace. */
@@ -37,18 +40,27 @@ export const MUTANTS = [
 	{ id: "MS6m", target: "S6", bug: "a sounder change ranks lower (spec and code agree)", edits: [{ find: "40 * soundness) / 100", replace: "40 * (100 - soundness)) / 100", all: true }] },
 	{ id: "MT1", target: "T1", bug: "a candidate can be approved before the gates", edits: [{ find: "Event::GateFail => Some(Status::GatedOut),", replace: "Event::GateFail => Some(Status::GatedOut),\n            Event::Approve => Some(Status::Approved)," }] },
 	{ id: "MT2", target: "T2", bug: "a swarm starts from open, without approval", edits: [{ find: "Event::Approve => Some(Status::Approved),", replace: "Event::Approve => Some(Status::Approved),\n            Event::Start => Some(Status::InProgress)," }] },
-	{ id: "MT3", target: "T3", bug: "a rejected recommendation reopens straight into the inbox", edits: [{ find: "Event::Reopen => Some(Status::Candidate),", replace: "Event::Reopen => Some(Status::Open)," }] },
+	{ id: "MT2c", target: "T2", bug: "a closed PR comes back as open on a retry, though nothing reopened it", edits: [{ find: "Event::Pr => Some(Status::PrOpened),", replace: "Event::Pr => Some(Status::PrOpened),\n            Event::Retry => Some(Status::PrOpened),", nth: 2 }] },
+	{ id: "MT3", target: "T3", bug: "a rejected recommendation reopens straight into the inbox", edits: [{ find: "Event::Reopen => Some(Status::Candidate),", replace: "Event::Reopen => Some(Status::Open),", nth: 1 }] },
 	{ id: "MT4", target: "T4", bug: "a gated-out recommendation can be rejected and reopened around the gates", edits: [{ find: "Event::Regate => Some(Status::Candidate),", replace: "Event::Regate => Some(Status::Rejected),", nth: 1 }] },
-	{ id: "MT5", target: "T5", bug: "an opened PR can be rejected and reopened", edits: [{ find: "Status::PrOpened => None,", replace: "Status::PrOpened => match e {\n            Event::Retry => Some(Status::Rejected),\n            _ => None,\n        }," }] },
-	{ id: "MT6", target: "T6", bug: "a rejected recommendation can't be reopened", edits: [{ find: "Event::Reopen => Some(Status::Candidate),", replace: "Event::Reopen => None," }] },
+	{ id: "MT5", target: "T5", bug: "an open PR can be rejected while it is still open on GitHub", edits: [{ find: "Event::Merge => Some(Status::Merged),", replace: "Event::Merge => Some(Status::Merged),\n            Event::Reject => Some(Status::Rejected)," }] },
+	{ id: "MT6", target: "T6", bug: "a rejected recommendation can't be reopened", edits: [{ find: "Event::Reopen => Some(Status::Candidate),", replace: "Event::Reopen => None,", nth: 1 }] },
+	{ id: "MT6c", target: "T6", bug: "a recommendation whose PR was closed can't be reopened", edits: [{ find: "Event::Reopen => Some(Status::Candidate),", replace: "Event::Reopen => None,", nth: 2 }] },
 	{ id: "MT7", target: "T7", bug: "replay starts past the gates", edits: [{ find: "let mut cur = Status::Candidate;", replace: "let mut cur = Status::Open;" }] },
-	{ id: "MW1", target: "W1", bug: "force-push is not forbidden", edits: [{ find: "Action::MergePr | Action::PushDefaultBranch | Action::ForcePush => {", replace: "Action::MergePr | Action::PushDefaultBranch => {" }] },
+	{ id: "MT8", target: "T8", bug: "a running swarm is marked merged without a PR", edits: [{ find: "Event::Fail => Some(Status::Failed),", replace: "Event::Fail => Some(Status::Failed),\n            Event::Merge => Some(Status::Merged)," }] },
+	{ id: "MT8r", target: "T8", bug: "a merged recommendation reopens, to run again on merged code", edits: [{ find: "Status::Merged => None,", replace: "Status::Merged => match e {\n            Event::Reopen => Some(Status::Candidate),\n            _ => None,\n        }," }] },
+	{ id: "MW1", target: "W1", bug: "force-push is not forbidden", edits: [{ find: "Action::PushDefaultBranch | Action::ForcePush => {", replace: "Action::PushDefaultBranch => {" }] },
 	{ id: "MW2", target: "W2", bug: "an open (unapproved) recommendation may write", edits: [{ find: "Status::Approved | Status::InProgress => {},", replace: "Status::Approved | Status::InProgress | Status::Open => {}," }] },
 	{ id: "MW3", target: "W3", bug: "the allow-list is skipped", edits: [{ find: "if !q.allow_swarm {", replace: "if false && !q.allow_swarm {" }] },
 	{ id: "MW4", target: "W4", bug: "a swarm may write to another repo", edits: [{ find: "if !q.same_repo {", replace: "if false && !q.same_repo {" }] },
 	{ id: "MW5", target: "W5", bug: "a ready-for-review PR may be opened", edits: [{ find: "if !q.draft {", replace: "if false {" }] },
 	{ id: "MW6", target: "W6", bug: "the agent-turn budget is not enforced", edits: [{ find: "q.tasks_used >= q.max_tasks || q.minutes_used >= q.max_minutes || q.turns_used >= q.max_turns", replace: "q.tasks_used >= q.max_tasks || q.minutes_used >= q.max_minutes" }] },
 	{ id: "MW7", target: "W7", bug: "draft work is refused everywhere (over-strict)", edits: [{ find: "if !q.same_repo {", replace: "if !q.same_repo || q.draft {" }] },
+	{ id: "MM1", target: "M1", bug: "a PR is merged mid-run, before the swarm opened it", edits: [{ find: "if merging {", replace: "if false && merging {" }] },
+	{ id: "MM2", target: "M2", bug: "the PR is merged or closed without your consent", edits: [{ find: "if !q.consent {", replace: "if false && !q.consent {" }] },
+	{ id: "MM3", target: "M3", bug: "a PR with failing or pending checks is merged", edits: [{ find: "q.checks_passed == 0 || q.checks_blocking > 0 || !q.mergeable", replace: "q.checks_passed == 0 || !q.mergeable" }] },
+	{ id: "MM3z", target: "M3", bug: "a PR with no checks at all is merged", edits: [{ find: "q.checks_passed == 0 || q.checks_blocking > 0 || !q.mergeable", replace: "q.checks_blocking > 0 || !q.mergeable" }] },
+	{ id: "MM3c", target: "M3", bug: "a PR with merge conflicts is merged", edits: [{ find: "q.checks_passed == 0 || q.checks_blocking > 0 || !q.mergeable", replace: "q.checks_passed == 0 || q.checks_blocking > 0" }] },
 ];
 
 export function applyEdits(text, edits, label) {
@@ -87,7 +99,7 @@ if (isMain) {
 		writeFileSync(file, text);
 		const run = spawnSync(verus, [file, "--crate-type=lib", "--edition=2021", "--multiple-errors", "20"], {
 			encoding: "utf8",
-			env: { ...process.env, RUSTUP_TOOLCHAIN: process.env.RUSTUP_TOOLCHAIN ?? "1.99.1-aarch64-pc-windows-msvc" },
+			env: { ...process.env, RUSTUP_TOOLCHAIN: process.env.RUSTUP_TOOLCHAIN ?? DEFAULT_TOOLCHAIN },
 		});
 		if (run.error) throw run.error;
 		const output = `${run.stdout}\n${run.stderr}`;
@@ -95,7 +107,7 @@ if (isMain) {
 		const caughtBy = [
 			...new Set(
 				[...output.matchAll(/-->\s+.*lib\.rs:(\d+):\d+/g)]
-					.map((m) => lines[Number(m[1]) - 1]?.match(/\/\/ ([LSTW]\d+)\s*$/)?.[1])
+					.map((m) => lines[Number(m[1]) - 1]?.match(/\/\/ ([LSTWM]\d+)\s*$/)?.[1])
 					.filter(Boolean),
 			),
 		].sort();
@@ -121,8 +133,8 @@ if (isMain) {
 			console.log(`${m.id.padEnd(5)} -> ${m.target}  ${ok ? "rejected" : "NOT CAUGHT"}  by ${r.caughtBy.join(", ") || "nothing"}  (${m.bug})`);
 			if (!ok) console.log(r.output.slice(0, 4000));
 		}
-		// The gap: W1-W6 are all "never allow when ..." clauses. Without W7, a
-		// guard that refuses every write proves, so W7 is what keeps it usable.
+		// The gap: W1-W6 and M1-M3 are all "never allow when ..." clauses. Without
+		// W7, a guard that refuses every write proves, so W7 keeps it usable.
 		const draft = dropClause(source, "W7");
 		const mw7 = MUTANTS.find((m) => m.id === "MW7");
 		const draftToday = prove(draft, "draft-today");

@@ -19,8 +19,8 @@ export const dynamic = "force-dynamic";
 
 const TABS = {
   open: { label: "Ready for review", statuses: ["open"] },
-  flight: { label: "In flight", statuses: ["candidate", "approved", "in_progress"] },
-  done: { label: "Done", statuses: ["pr_opened", "failed", "rejected"] },
+  flight: { label: "In flight", statuses: ["candidate", "approved", "in_progress", "pr_opened"] },
+  done: { label: "Done", statuses: ["merged", "closed", "failed", "rejected"] },
   filtered: { label: "Filtered out", statuses: ["gated_out"] },
 } as const;
 type TabKey = keyof typeof TABS;
@@ -54,6 +54,7 @@ export default async function InboxPage({ searchParams }: { searchParams: Promis
   const counts = Object.fromEntries((Object.keys(TABS) as TabKey[]).map((k) => [k, all.filter((r) => inTab(r, k)).length])) as Record<TabKey, number>;
   const rows = all.filter((r) => inTab(r, tab));
   const verifying = all.filter((r) => r.status === "candidate").length;
+  const readyToMerge = all.filter((r) => r.status === "pr_opened" && r.pr?.next.stage === "ready").length;
 
   return (
     <div>
@@ -85,7 +86,12 @@ export default async function InboxPage({ searchParams }: { searchParams: Promis
             <Stat label="Ready" value={s.open} tone="olive" hint="awaiting your call" />
             <Stat label="Repos watched" value={s.repos} hint={`${s.allowedRepos} allow swarms`} />
             <Stat label="Techniques" value={s.techniques} hint={`${usable.filter((t) => t.legitimacy?.passed).length} legit · ${usable.filter((t) => t.legitimacy && !t.legitimacy.passed).length} hype${setAside ? ` · ${setAside} set aside` : ""}`} />
-            <Stat label="Draft PRs" value={s.prs} tone="sky" hint={`${s.activeSwarms} swarm${s.activeSwarms === 1 ? "" : "s"} running`} />
+            <Stat
+              label="Open PRs"
+              value={s.prs}
+              tone="sky"
+              hint={readyToMerge ? `${readyToMerge} ready to merge` : `${s.merged} merged · ${s.activeSwarms} swarm${s.activeSwarms === 1 ? "" : "s"} running`}
+            />
           </div>
           <SearchPlan plan={plan} className="mt-4" />
           <AccessStrip ecosystems={access.ecosystems} setAside={setAside} className="mt-1" />

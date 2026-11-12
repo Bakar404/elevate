@@ -38,7 +38,9 @@ Proof-driven development, speculative decoding, weight-space editing, whatever l
 1. **Is the new thing actually legit?** It checks source credibility, independent corroboration, community signal, public code, and gets a skeptical model review.
 2. **Is the change sound for this repo, and will it make a measurable difference?** It checks fit with the repo, risk, and a concrete way to measure the impact.
 
-You approve, and elevate sends a swarm of agents that plan, implement, test and review the change, then open a **draft** PR. It never merges.
+You approve, and elevate sends a swarm of agents that plan, implement, test and review the change, then open a **draft** PR.
+
+Then elevate follows the PR. Every couple of minutes it reads the PR's checks and whether GitHub can merge it, and the swarm page says what the PR is waiting on and what to do next. Once at least one check passed, none failed or is still running, and there are no conflicts, you click **Merge**. Or turn on "Auto-merge verified PRs" in Settings and elevate squash-merges it on its own and deletes the branch. It never merges a PR its checks didn't verify, and merges or closes made on GitHub show up in elevate too.
 
 By default the PR is yours: when the Copilot coding agent finishes, elevate squashes its work into one commit under your account, opens the draft PR as you and closes Copilot's PR. Turn off "Publish swarm PRs as me" in Settings to keep Copilot's PR as it is.
 
@@ -107,6 +109,7 @@ pnpm dev                        # http://localhost:3100
 - **Offline demo:** `ELEVATE_DEMO=1 pnpm dev` uses sample repos and sources, a deterministic model and simulated swarms. It doesn't touch GitHub.
 - **Docker:** `docker compose up -d --build` runs Postgres, the web app and a separate worker at http://localhost:3100. They restart on their own (`restart: unless-stopped`), so with Docker Desktop set to start at sign-in, elevate is back after every reboot. `docker compose stop` turns it off.
 - **Check the model runtime:** `pnpm smoke:copilot` makes one structured call through Copilot, or through your BYOK provider.
+- **Pages reload over and over under `pnpm dev`?** Turbopack's dev cache is stale. Stop the server, delete `apps/web/.next/dev`, and start it again.
 
 ## How it works
 
@@ -165,7 +168,7 @@ The rules that stand between a headline and a branch on your repo are **proved**
 
 - the Gate 1 and Gate 2 decisions
 - the recommendation lifecycle: no swarm without both gates and your approval
-- the write guard: never merge, only opted-in repos, drafts only, within budget
+- the write guard: only opted-in repos, drafts only, within budget, and a merge only with your consent and only once the PR's checks verify it
 
 <picture>
   <source media="(prefers-color-scheme: light)" srcset="docs/images/proof-light.svg">
@@ -174,7 +177,7 @@ The rules that stand between a headline and a branch on your repo are **proved**
 
 They follow the [PDD Kit](https://www.microsoft.com/en-us/research/blog/formally-verifying-agent-written-full-stack-web-apps-with-pdd-kit/) method:
 
-1. **Intent:** [`proof/intent.md`](proof/intent.md) states 26 requirements in plain words.
+1. **Intent:** [`proof/intent.md`](proof/intent.md) states 30 requirements in plain words.
 2. **Spec and proof:** [`proof/verified/src/lib.rs`](proof/verified/src/lib.rs) states each requirement in Verus and proves it for every input.
 3. **Mutation check:** one bug is planted per clause, and Verus must reject each one.
 4. **Differential test:** the TypeScript the app runs (`packages/policy`) is compared with the proved code, built to WASM, over every input class. A **negative control** shows the test can fail.
@@ -219,9 +222,10 @@ In Docker, put `GITHUB_TOKEN` (and any BYOK key) in `.env`, because a container 
 ## Safety rails
 
 - Nothing is written to GitHub until you approve, and only to repos you opted in.
-- Pull requests are drafts. elevate never merges, pushes to a default branch, or force-pushes.
+- Pull requests open as drafts. elevate never pushes to a default branch or force-pushes.
+- elevate merges a swarm's PR only when you click Merge or turned on auto-merge, and only once at least one check passed, none failed or is still running, and GitHub can merge it. The squash is pinned to the commit it checked, so a later push can't slip in.
 - Every swarm has a budget for tasks, minutes and agent turns. Swarms still running when the worker restarts are resumed, not re-planned.
-- The only PR elevate closes is the coding agent's own PR after republishing it as you, and only while that swarm is running.
+- elevate closes a PR only when you click Close, or to replace the coding agent's own PR after republishing it as you while that swarm is running.
 - Every write is checked by the proved guard and recorded in the audit log.
 
 ## Built with

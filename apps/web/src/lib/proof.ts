@@ -24,7 +24,8 @@ export function readReceipt(): ProofReceipt | undefined {
   const md = readFileSync(path.join(root, "proof", "RECEIPT.md"), "utf8");
   const requirements = md
     .split(/\r?\n/)
-    .filter((l) => /^\| [LSTW]\d \|/.test(l))
+    // Requirement ids are one letter and a number (L1, M3); mutants (MM3) and trust-base rows (TB1) have two letters.
+    .filter((l) => /^\| [A-Z]\d+ \|/.test(l))
     .map((l) => {
       const [id, text, proved, mutant, checked] = l.split("|").slice(1, 6).map((c) => c.trim());
       return { id: id!, text: text!, proved: proved!, mutant: mutant!, checked: checked! };

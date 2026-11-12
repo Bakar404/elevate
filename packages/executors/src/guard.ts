@@ -6,9 +6,12 @@ import {
   copilotWorkStatus,
   createIssue,
   findLinkedPullRequests,
+  mergePullRequest,
   openDraftPullRequest,
+  pullRequestStatus,
   squashPullRequest,
   type Octokit,
+  type PrStatus,
 } from "@elevate/github";
 import { authorizeWrite, WriteRefused, type Status, type Usage, type WriteAction } from "@elevate/policy";
 
@@ -27,7 +30,13 @@ export interface GitHubWriter {
   /** Squash a PR into one commit, authored by the token's user, on a new branch. Returns the PR's body. */
   squashPr(fullName: string, pr: number, opts: { branch: string; message: string }): Promise<{ sha: string; body: string }>;
   closePr(fullName: string, pr: number): Promise<void>;
+  /** Read-only: the PR's state, whether GitHub can merge it, and the checks on its head commit. */
+  prStatus(fullName: string, pr: number): Promise<PrStatus>;
+  /** Mark a draft ready, merge exactly at `sha`, then delete `deleteBranch`. */
+  mergePr(fullName: string, pr: number, opts: { sha: string; deleteBranch?: string }): Promise<MergeResult>;
 }
+
+export type MergeResult = { sha: string; method: string; branchDeleted: boolean };
 
 export function octokitWriter(gh: Octokit): GitHubWriter {
   return {
@@ -39,6 +48,8 @@ export function octokitWriter(gh: Octokit): GitHubWriter {
     agentWork: (f, p) => copilotWorkStatus(gh, f, p),
     squashPr: (f, p, o) => squashPullRequest(gh, f, p, o),
     closePr: (f, p) => closePullRequest(gh, f, p),
+    prStatus: (f, p) => pullRequestStatus(gh, f, p),
+    mergePr: (f, p, o) => mergePullRequest(gh, f, p, o),
   };
 }
 
@@ -54,8 +65,16 @@ export type GuardOptions = {
   now?: () => number;
 };
 
-export type GuardedGitHub = Omit<GitHubWriter, "openDraftPr"> & {
+export type GuardedGitHub = Omit<GitHubWriter, "openDraftPr" | "closePr" | "mergePr"> & {
   openDraftPr(fullName: string, opts: { head: string; base: string; title: string; body: string; draft?: boolean }): Promise<{ url: string; number: number }>;
+  /** Mid-run (the agent's own PR) or, with your consent, the swarm's open PR (M2). */
+  closePr(fullName: string, pr: number, opts?: { consent?: boolean }): Promise<void>;
+  /**
+   * M1–M3: merge the swarm's open PR, with your consent, only when a check passed, none is
+   * failing or pending, and GitHub can merge it. Reads the PR fresh and merges at the head
+   * commit it checked, so a push after the check makes GitHub refuse the merge.
+   */
+  mergePr(fullName: string, pr: number, opts: { consent: boolean }): Promise<MergeResult & { status: PrStatus }>;
   /** Authorize a write that doesn't go through the GitHub API (local agent runs, `git push`). */
   authorize(action: WriteAction, fullName: string, details?: Record<string, unknown>): Promise<void>;
   /** Authorize a `git push` of `branch`: pushing the default branch is a separate, forbidden action (W1). */
@@ -76,14 +95,20 @@ export function guardedGitHub(raw: GitHubWriter, opts: GuardOptions): GuardedGit
   const used = { tasks: 0, agentTurns: 0 };
   const usage = (): Usage => ({ ...used, minutes: Math.floor((now() - started) / 60_000) });
 
-  async function authorize(action: WriteAction, fullName: string, details: Record<string, unknown> = {}, draft = true) {
+  type Facts = { draft?: boolean; consent?: boolean; checksPassed?: number; checksBlocking?: number; mergeable?: boolean };
+
+  async function authorize(action: WriteAction, fullName: string, details: Record<string, unknown> = {}, facts: Facts = {}) {
     const s = await opts.state();
     const verdict = authorizeWrite({
       action,
       status: s.status,
       allowSwarm: s.allowSwarm,
       sameRepo: fullName.toLowerCase() === opts.repoFullName.toLowerCase(),
-      draft,
+      draft: facts.draft ?? true,
+      consent: facts.consent ?? false,
+      checksPassed: facts.checksPassed ?? 0,
+      checksBlocking: facts.checksBlocking ?? 0,
+      mergeable: facts.mergeable ?? false,
       usage: usage(),
       budget: opts.budget,
     });
@@ -93,7 +118,7 @@ export function guardedGitHub(raw: GitHubWriter, opts: GuardOptions): GuardedGit
   }
 
   return {
-    authorize,
+    authorize: (action, fullName, details) => authorize(action, fullName, details),
     async authorizePush(fullName, branch) {
       const action: WriteAction = branch === opts.defaultBranch ? "push_default_branch" : "push_branch";
       await authorize(action, fullName, { branch });
@@ -117,7 +142,7 @@ export function guardedGitHub(raw: GitHubWriter, opts: GuardOptions): GuardedGit
     async openDraftPr(fullName, o) {
       const draft = o.draft ?? true;
       if (o.head === opts.defaultBranch) await authorize("push_default_branch", fullName, { head: o.head });
-      await authorize("open_pr", fullName, { head: o.head, base: o.base }, draft);
+      await authorize("open_pr", fullName, { head: o.head, base: o.base }, { draft });
       return raw.openDraftPr(fullName, { head: o.head, base: o.base, title: o.title, body: o.body });
     },
     linkedPrs: (fullName, issue) => raw.linkedPrs(fullName, issue),
@@ -127,9 +152,18 @@ export function guardedGitHub(raw: GitHubWriter, opts: GuardOptions): GuardedGit
       await authorize(action, fullName, { branch: o.branch, squash: pr });
       return raw.squashPr(fullName, pr, o);
     },
-    async closePr(fullName, pr) {
-      await authorize("close_pr", fullName, { pr });
+    async closePr(fullName, pr, o) {
+      await authorize("close_pr", fullName, { pr }, { consent: o?.consent ?? false });
       return raw.closePr(fullName, pr);
+    },
+    prStatus: (fullName, pr) => raw.prStatus(fullName, pr),
+    async mergePr(fullName, pr, o) {
+      const status = await raw.prStatus(fullName, pr);
+      const facts = { consent: o.consent, checksPassed: status.passed, checksBlocking: status.blocking, mergeable: status.mergeable };
+      await authorize("merge_pr", fullName, { pr, sha: status.headSha, passed: status.passed, blocking: status.blocking, mergeable: status.mergeable }, facts);
+      const deleteBranch = status.sameRepoHead && status.headRef !== opts.defaultBranch ? status.headRef : undefined;
+      const merged = await raw.mergePr(fullName, pr, { sha: status.headSha, deleteBranch });
+      return { ...merged, status };
     },
   };
 }

@@ -64,11 +64,11 @@ export function recommendationScore(relevance: number, legitimacy: number, sound
   return Math.floor((30 * pct(relevance) + 30 * pct(legitimacy) + 40 * pct(soundness)) / 100);
 }
 
-// ─── The lifecycle (T1–T7) ───────────────────────────────────────────────
+// ─── The lifecycle (T1–T8) ───────────────────────────────────────────────
 
-export const STATUSES = ["candidate", "gated_out", "open", "approved", "rejected", "in_progress", "pr_opened", "failed"] as const;
+export const STATUSES = ["candidate", "gated_out", "open", "approved", "rejected", "in_progress", "pr_opened", "failed", "merged", "closed"] as const;
 export type Status = (typeof STATUSES)[number];
-export const EVENTS = ["gate_pass", "gate_fail", "approve", "reject", "start", "pr", "fail", "retry", "regate", "reopen"] as const;
+export const EVENTS = ["gate_pass", "gate_fail", "approve", "reject", "start", "pr", "fail", "retry", "regate", "reopen", "merge", "close"] as const;
 export type LifecycleEvent = (typeof EVENTS)[number];
 
 const LIFECYCLE: Record<Status, Partial<Record<LifecycleEvent, Status>>> = {
@@ -79,7 +79,10 @@ const LIFECYCLE: Record<Status, Partial<Record<LifecycleEvent, Status>>> = {
   in_progress: { pr: "pr_opened", fail: "failed" },
   failed: { retry: "approved", reject: "rejected" },
   rejected: { reopen: "candidate" },
-  pr_opened: {},
+  pr_opened: { merge: "merged", close: "closed" },
+  merged: {},
+  // `pr`: the closed PR was reopened on GitHub.
+  closed: { reopen: "candidate", pr: "pr_opened" },
 };
 
 /** The next status, or null when the event isn't allowed in this status. */
@@ -103,7 +106,7 @@ export function canTransition(status: Status, event: LifecycleEvent): boolean {
   return transition(status, event) !== null;
 }
 
-// ─── The write guard (W1–W7) ─────────────────────────────────────────────
+// ─── The write guard (W1–W7, M1–M3) ──────────────────────────────────────
 
 export const ACTIONS = [
   "create_issue",
@@ -119,7 +122,17 @@ export const ACTIONS = [
 ] as const;
 export type WriteAction = (typeof ACTIONS)[number];
 
-export const VERDICTS = ["allow", "forbidden", "not_approved", "repo_not_allowed", "wrong_repo", "not_draft", "budget_exhausted"] as const;
+export const VERDICTS = [
+  "allow",
+  "forbidden",
+  "not_approved",
+  "repo_not_allowed",
+  "wrong_repo",
+  "not_draft",
+  "budget_exhausted",
+  "no_consent",
+  "not_verified",
+] as const;
 export type Verdict = (typeof VERDICTS)[number];
 
 export type Budget = { maxTasks: number; maxMinutes: number; maxAgentTurns: number };
@@ -131,18 +144,36 @@ export type WriteRequest = {
   allowSwarm: boolean;
   sameRepo: boolean;
   draft: boolean;
+  /** Merging or closing the swarm's open PR: you clicked it, or turned auto-merge on (M2). */
+  consent?: boolean;
+  /** GitHub checks on the PR's head commit that passed (M3). */
+  checksPassed?: number;
+  /** Checks that failed, were cancelled, or are still running (M3). */
+  checksBlocking?: number;
+  /** GitHub can merge the PR without conflicts (M3). */
+  mergeable?: boolean;
   usage: Usage;
   budget: Budget;
 };
 
-const FORBIDDEN = new Set<WriteAction>(["merge_pr", "push_default_branch", "force_push"]);
+const FORBIDDEN = new Set<WriteAction>(["push_default_branch", "force_push"]);
 const SPENDS = new Set<WriteAction>(["assign_agent", "run_local_agent"]);
 
 export function authorizeWrite(q: WriteRequest): Verdict {
   if (FORBIDDEN.has(q.action) || !ACTIONS.includes(q.action)) return "forbidden";
-  if (q.status !== "approved" && q.status !== "in_progress") return "not_approved";
+  const merging = q.action === "merge_pr";
+  const finishing = q.status === "pr_opened" && (merging || q.action === "close_pr");
+  if (!finishing) {
+    if (q.status !== "approved" && q.status !== "in_progress") return "not_approved";
+    if (merging) return "not_approved";
+  }
   if (!q.allowSwarm) return "repo_not_allowed";
   if (!q.sameRepo) return "wrong_repo";
+  if (finishing) {
+    if (q.consent !== true) return "no_consent";
+    if (merging && (!((q.checksPassed ?? 0) > 0) || (q.checksBlocking ?? 0) !== 0 || q.mergeable !== true)) return "not_verified";
+    return "allow";
+  }
   if (q.action === "open_pr" && !q.draft) return "not_draft";
   if (SPENDS.has(q.action)) {
     const { usage: u, budget: b } = q;

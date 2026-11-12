@@ -1,8 +1,9 @@
 import { getRecommendation } from "@elevate/engine";
-import { ArrowLeft, Ban, ExternalLink, GitPullRequestDraft } from "lucide-react";
+import { ArrowLeft, Ban, ExternalLink } from "lucide-react";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { GateCard } from "@/components/gate-card";
+import { PrIcon, PrPanel, prState } from "@/components/pr";
 import { StatusBadge } from "@/components/rec";
 import { RecActions } from "@/components/rec-actions";
 import { Badge, Card, ScoreRing } from "@/components/ui";
@@ -17,11 +18,13 @@ const EVENT_LABEL: Record<string, string> = {
   approve: "Approved",
   reject: "Rejected",
   start: "Swarm started",
-  pr: "Draft PR opened",
+  pr: "PR opened",
   fail: "Swarm failed",
   retry: "Retried",
   regate: "Sent back for verification",
   reopen: "Reopened",
+  merge: "PR merged",
+  close: "PR closed",
 };
 
 export default async function RecommendationPage({ params }: { params: Promise<{ id: string }> }) {
@@ -69,8 +72,22 @@ export default async function RecommendationPage({ params }: { params: Promise<{
       )}
 
       <div className="mt-6">
-        <RecActions id={r.id} status={r.status} repo={r.repo} allowSwarm={r.allowSwarm} demo={ctx.demo} />
+        <RecActions id={r.id} status={r.status} repo={r.repo} allowSwarm={r.allowSwarm} autoMerge={r.autoMerge} demo={ctx.demo} />
       </div>
+
+      {r.pr && (
+        <PrPanel
+          className="mt-6"
+          swarmId={r.pr.swarmId}
+          recommendationId={r.id}
+          repo={r.repo}
+          url={r.pr.url}
+          pr={r.pr.status}
+          next={r.pr.next}
+          autoMerge={r.autoMerge}
+          showReverify={false}
+        />
+      )}
 
       <div className="mt-8 grid gap-6 lg:grid-cols-[1fr_18rem]">
         <div className="grid min-w-0 gap-6">
@@ -149,8 +166,8 @@ export default async function RecommendationPage({ params }: { params: Promise<{
                       {s.executor} · {s.status}
                     </Link>
                     {s.prUrl && (
-                      <a href={s.prUrl} target="_blank" rel="noreferrer" className="ml-auto text-olive" aria-label="Draft PR">
-                        <GitPullRequestDraft className="size-4" />
+                      <a href={s.prUrl} target="_blank" rel="noreferrer" className="ml-auto" aria-label="Pull request">
+                        <PrIcon state={r.pr?.swarmId === s.id ? prState(r.pr.status, r.pr.next.stage) : "open"} draft={r.pr?.swarmId === s.id ? r.pr.status?.draft : true} className="size-4" />
                       </a>
                     )}
                   </li>

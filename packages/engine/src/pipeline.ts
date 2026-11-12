@@ -5,6 +5,7 @@ import { legitimacyGate, soundnessGate } from "./gates";
 import { fetchSourceItems, seedSources, sweepSources, triageItems } from "./ingest";
 import { matchRepo, matchTechnique } from "./matcher";
 import { profileRepo, syncRepos } from "./profiler";
+import { prCheckMinutes, trackPullRequests } from "./prs";
 import { resumeSwarms, runSwarm } from "./swarm";
 
 type Handler = (ctx: Ctx, payload: Record<string, unknown>, job: ClaimedJob) => Promise<unknown>;
@@ -29,6 +30,7 @@ export const HANDLERS: Record<string, Handler> = {
   "technique.match": (ctx, p) => matchTechnique(ctx, str(p, "techniqueId")),
   "recommendation.soundness": (ctx, p) => soundnessGate(ctx, str(p, "recommendationId")),
   "swarm.run": (ctx, p) => runSwarm(ctx, str(p, "swarmId"), { resume: p.resume === true }),
+  "prs.track": (ctx, p) => trackPullRequests(ctx, { swarmId: typeof p.swarmId === "string" ? p.swarmId : undefined }),
 };
 
 export async function runJob(ctx: Ctx, job: ClaimedJob) {
@@ -56,6 +58,8 @@ const SCHEDULE = [
   { job: "sources.sweep", every: minutes(process.env.ELEVATE_SWEEP_MINUTES, 15), needsGitHub: false },
   // Cheap: one list call, plus a branch lookup only for repos that were pushed to.
   { job: "repos.sync", every: minutes(process.env.ELEVATE_SYNC_MINUTES, 2), needsGitHub: true },
+  // Follows open swarm PRs: their checks, merges and closes on GitHub, and auto-merge when it's on.
+  { job: "prs.track", every: prCheckMinutes() * 60_000, needsGitHub: true },
 ];
 
 /** Enqueue recurring jobs that are due. Cheap to call often; state lives in settings so restarts don't re-run everything. */

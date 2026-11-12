@@ -261,7 +261,7 @@ export function ActivityGraph({ data, logo }: { data: Graph; logo?: LogoVariant 
                 transition={{ duration: 0.45, delay: 0.2 + i * 0.04, ease: [0.23, 1, 0.32, 1] }}
                 style={{ transformOrigin: `${p.x}px ${p.y}px` }}
               >
-                <title>{`${r.fullName}${r.language ? ` · ${r.language}` : ""}${r.open ? ` · ${r.open} to review` : ""}${r.prs ? ` · ${r.prs} draft PR${r.prs === 1 ? "" : "s"}` : ""}`}</title>
+                <title>{`${r.fullName}${r.language ? ` · ${r.language}` : ""}${r.open ? ` · ${r.open} to review` : ""}${r.prs ? ` · ${r.prs} open PR${r.prs === 1 ? "" : "s"}` : ""}`}</title>
                 <circle cx={p.x} cy={p.y} r={16} fill="transparent" />
                 {r.state !== "watched" && !reduce && (
                   <circle cx={p.x} cy={p.y} r={6} fill="none" stroke={color} strokeWidth={1.5} className="graph-ping" style={{ animationDelay: `${(i % 5) * 0.35}s` }} />

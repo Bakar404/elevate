@@ -1,7 +1,8 @@
 import { getSwarm } from "@elevate/engine";
-import { ArrowLeft, ExternalLink, GitPullRequestDraft, ShieldCheck } from "lucide-react";
+import { ArrowLeft, ExternalLink, ShieldCheck } from "lucide-react";
 import Link from "next/link";
 import { notFound } from "next/navigation";
+import { PrIcon, PrPanel, prNumber, prState } from "@/components/pr";
 import { CancelSwarm, SwarmLog, SwarmStatus, TaskGraph } from "@/components/swarm";
 import { Badge, Card } from "@/components/ui";
 import { getCtx } from "@/lib/server";
@@ -51,7 +52,7 @@ export default async function SwarmPage({ params }: { params: Promise<{ id: stri
               data-testid="pr-link"
               className="inline-flex h-8 items-center gap-2 rounded-lg border border-olive/40 bg-olive/10 px-3 text-[13px] font-medium text-olive transition-transform active:scale-[0.97]"
             >
-              <GitPullRequestDraft className="size-4" /> Draft PR
+              <PrIcon state={s.next ? prState(s.pr, s.next.stage) : "open"} draft={s.pr?.draft ?? true} className="size-4" /> PR #{prNumber(s.prUrl, s.pr)}
             </a>
           )}
           {s.issueUrl && (
@@ -64,6 +65,10 @@ export default async function SwarmPage({ params }: { params: Promise<{ id: stri
       </header>
 
       {s.error && <Card className="mt-6 border-danger/40 bg-danger/5 p-4 text-sm text-danger">{s.error}</Card>}
+
+      {s.prUrl && s.next && (
+        <PrPanel className="mt-6" swarmId={s.id} recommendationId={s.recommendationId} repo={s.repo} url={s.prUrl} pr={s.pr} next={s.next} autoMerge={s.autoMerge} />
+      )}
 
       <section className="mt-8">
         <h2 className="mb-3 text-xs uppercase tracking-wider text-faint">Plan</h2>

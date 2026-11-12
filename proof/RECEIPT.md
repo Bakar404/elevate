@@ -1,6 +1,6 @@
 # Receipt: elevate's policy kernel
 
-**PASS.** Run 2026-11-11 02:13:54 UTC on win32 arm64, at elevate `570e21b`. Written by `proof/run.mjs` from `proof/results/`; the requirements and decisions are in `proof/intent.md`.
+**PASS.** Run 2026-11-12 20:06:18 UTC on win32 x64, at elevate `a1ce9c0`. Written by `proof/run.mjs` from `proof/results/`; the requirements and decisions are in `proof/intent.md`.
 
 ## Requirements
 
@@ -18,30 +18,34 @@
 | S4 | Riskier changes need a stronger case (+0, +5, +15). | proved (S4) | MS4 | soundness: 0 of 244,824 differ |
 | S5 | Otherwise it passes exactly when the score reaches the risk-adjusted bar. | proved (S5) | MS5 | soundness: 0 of 244,824 differ |
 | S6 | The inbox rank is exact, within 0 to 100, and monotone. | proved (S6) | MS6, MS6m | rank: 0 of 1,030,301 differ |
-| T1 | Only an open recommendation is approved (or a failed one retried). | proved (T1) | MT1 | transition: 0 of 80 differ |
-| T2 | A swarm starts only from approved; a PR or failure only from a running swarm. | proved (T2) | MT2 | transition: 0 of 80 differ |
-| T3 | Nothing reaches the inbox without passing the gates. | proved (T3) | MT3 | transition: 0 of 80 differ |
-| T4 | Gated out can only go back to candidate. | proved (T4) | MT4 | transition: 0 of 80 differ |
-| T5 | A draft PR is the end. | proved (T5) | MT5 | transition: 0 of 80 differ |
-| T6 | A rejected recommendation reopens as a candidate, re-gated. | proved (T6) | MT6 | transition: 0 of 80 differ |
-| T7 | No swarm without both gates and your approval, for every event history. | proved (T7) | MT7 | replay: 0 of 131,111 differ |
-| W1 | Never merge, push to the default branch, or force-push. | proved (W1) | MW1 | authorize: 0 of 80,000 differ |
-| W2 | No write until you approve. | proved (W2) | MW2 | authorize: 0 of 80,000 differ |
-| W3 | Only repos you opted in. | proved (W3) | MW3 | authorize: 0 of 80,000 differ |
-| W4 | Only the recommendation's own repo. | proved (W4) | MW4 | authorize: 0 of 80,000 differ |
-| W5 | Pull requests are drafts. | proved (W5) | MW5 | authorize: 0 of 80,000 differ |
-| W6 | Agent work stops at the budget; publishing finished work doesn't. | proved (W6) | MW6 | authorize: 0 of 80,000 differ |
-| W7 | Otherwise the write is allowed, and only then. | proved (W7) | MW7 | authorize: 0 of 80,000 differ |
+| T1 | Only an open recommendation is approved (or a failed one retried). | proved (T1) | MT1 | transition: 0 of 120 differ |
+| T2 | A swarm starts only from approved; a PR or failure only from a running swarm (or a closed PR reopened). | proved (T2) | MT2, MT2c | transition: 0 of 120 differ |
+| T3 | Nothing reaches the inbox without passing the gates. | proved (T3) | MT3 | transition: 0 of 120 differ |
+| T4 | Gated out can only go back to candidate. | proved (T4) | MT4 | transition: 0 of 120 differ |
+| T5 | An open PR ends only by being merged or closed. | proved (T5) | MT5 | transition: 0 of 120 differ |
+| T6 | A rejected recommendation, or one whose PR was closed, reopens as a candidate, re-gated. | proved (T6) | MT6, MT6c | transition: 0 of 120 differ |
+| T7 | No swarm without both gates and your approval, for every event history. | proved (T7) | MT7 | replay: 0 of 291,453 differ |
+| T8 | A merged PR is the end, and only an open PR is merged or closed. | proved (T8) | MT8, MT8r | transition: 0 of 120 differ |
+| W1 | Never push to the default branch or force-push. | proved (W1) | MW1 | authorize: 0 of 1,600,000 differ |
+| W2 | No write until you approve (finishing the swarm's open PR is M1 to M3). | proved (W2) | MW2 | authorize: 0 of 1,600,000 differ |
+| W3 | Only repos you opted in. | proved (W3) | MW3 | authorize: 0 of 1,600,000 differ |
+| W4 | Only the recommendation's own repo. | proved (W4) | MW4 | authorize: 0 of 1,600,000 differ |
+| W5 | Pull requests are drafts. | proved (W5) | MW5 | authorize: 0 of 1,600,000 differ |
+| W6 | Agent work stops at the budget; publishing finished work doesn't. | proved (W6) | MW6 | authorize: 0 of 1,600,000 differ |
+| W7 | Otherwise the write is allowed, and only then. | proved (W7) | MW7 | authorize: 0 of 1,600,000 differ |
+| M1 | Only the swarm's open PR is merged: never mid-run. | proved (M1) | MM1 | authorize: 0 of 1,600,000 differ |
+| M2 | Merging or closing the PR needs your consent (a click, or auto-merge on). | proved (M2) | MM2 | authorize: 0 of 1,600,000 differ |
+| M3 | Only a verified PR is merged: a check passed, none failing or pending, no conflicts. | proved (M3) | MM3, MM3z, MM3c | authorize: 0 of 1,600,000 differ |
 
 ## Steps
 
 | Step | Command | Exit | Time | Result |
 |---|---|---|---|---|
-| Prove | `verus proof/verified/src/lib.rs --crate-type=lib --edition=2021` | 0 | 3.6 s | ok: 12 verified, 0 errors |
-| Mutation check | `node proof/mutation-check.mjs` | 0 | 32.8 s | ok: 27 of 27 mutants rejected on their clause; draft gap shown |
-| Build to WASM | `cargo build --release --target wasm32-unknown-unknown` | 0 | 3.1 s | ok: proof/build/elevate_policy.wasm, 22413 bytes |
-| Test D | `vitest run packages/policy/test/differential.test.ts` | 0 | 1.7 s | ok: 0 of 2,302,396 inputs differ |
-| Negative control | `MW2 to WASM; vitest run differential.test.ts` | 1 | 2.5 s | ok: D failed, as it must: 7,000 of 80,000 authorize inputs differ |
+| Prove | `verus proof/verified/src/lib.rs --crate-type=lib --edition=2021` | 0 | 4.1 s | ok: 12 verified, 0 errors |
+| Mutation check | `node proof/mutation-check.mjs` | 0 | 59.3 s | ok: 36 of 36 mutants rejected on their clause; draft gap shown |
+| Build to WASM | `cargo build --release --target wasm32-unknown-unknown` | 0 | 29.1 s | ok: proof/build/elevate_policy.wasm, 22720 bytes |
+| Test D | `vitest run packages/policy/test/differential.test.ts` | 0 | 5.3 s | ok: 0 of 3,982,778 inputs differ |
+| Negative control | `MW2 to WASM; vitest run differential.test.ts` | 1 | 27.2 s | ok: D failed, as it must: 112,000 of 1,600,000 authorize inputs differ |
 
 ## Mutation check
 
@@ -64,11 +68,15 @@ One bug planted per clause in a scratch copy. Each must fail the proof on the cl
 | MS6m | a sounder change ranks lower (spec and code agree) | S6 | S6 | caught |
 | MT1 | a candidate can be approved before the gates | T1 | T1 | caught |
 | MT2 | a swarm starts from open, without approval | T2 | T2 | caught |
+| MT2c | a closed PR comes back as open on a retry, though nothing reopened it | T2 | T2 | caught |
 | MT3 | a rejected recommendation reopens straight into the inbox | T3 | T3, T6 | caught |
 | MT4 | a gated-out recommendation can be rejected and reopened around the gates | T4 | T4 | caught |
-| MT5 | an opened PR can be rejected and reopened | T5 | T5 | caught |
+| MT5 | an open PR can be rejected while it is still open on GitHub | T5 | T5 | caught |
 | MT6 | a rejected recommendation can't be reopened | T6 | T6 | caught |
+| MT6c | a recommendation whose PR was closed can't be reopened | T6 | T6 | caught |
 | MT7 | replay starts past the gates | T7 | T7 | caught |
+| MT8 | a running swarm is marked merged without a PR | T8 | T8 | caught |
+| MT8r | a merged recommendation reopens, to run again on merged code | T8 | T8 | caught |
 | MW1 | force-push is not forbidden | W1 | W1, W7 | caught |
 | MW2 | an open (unapproved) recommendation may write | W2 | W2, W7 | caught |
 | MW3 | the allow-list is skipped | W3 | W3, W7 | caught |
@@ -76,8 +84,13 @@ One bug planted per clause in a scratch copy. Each must fail the proof on the cl
 | MW5 | a ready-for-review PR may be opened | W5 | W5, W7 | caught |
 | MW6 | the agent-turn budget is not enforced | W6 | W6, W7 | caught |
 | MW7 | draft work is refused everywhere (over-strict) | W7 | W7 | caught |
+| MM1 | a PR is merged mid-run, before the swarm opened it | M1 | M1, M3, W7 | caught |
+| MM2 | the PR is merged or closed without your consent | M2 | M2, W7 | caught |
+| MM3 | a PR with failing or pending checks is merged | M3 | M3, W7 | caught |
+| MM3z | a PR with no checks at all is merged | M3 | M3, W7 | caught |
+| MM3c | a PR with merge conflicts is merged | M3 | M3, W7 | caught |
 
-**The draft-spec gap.** W1 to W6 only say when a write is refused. With them alone, today's guard proves and so does MW7, a guard that refuses every draft PR, so the safety clauses permit a guard that never lets a swarm deliver. W7 pins the exact rule.
+**The draft-spec gap.** W1 to W6 and M1 to M3 only say when a write is refused. With them alone, today's guard proves and so does MW7, a guard that refuses every draft PR, so the safety clauses permit a guard that never lets a swarm deliver. W7 pins the exact rule.
 
 ## The differential test (D)
 
@@ -88,11 +101,11 @@ The shipped TypeScript (`packages/policy`) against the proved WASM:
 | legitimacy | 816,080 | 0 | 202 |
 | soundness | 244,824 | 0 | 2 |
 | rank | 1,030,301 | 0 | 101 |
-| transition | 80 | 0 | 9 |
-| replay | 131,111 | 0 | 9 |
-| authorize | 80,000 | 0 | 7 |
+| transition | 120 | 0 | 11 |
+| replay | 291,453 | 0 | 11 |
+| authorize | 1,600,000 | 0 | 9 |
 
-**Negative control.** The same test against mutant MW2 (an open (unapproved) recommendation may write) built to WASM must fail. It failed, as it must: 7,000 of 80,000 authorize inputs differ. One of them: `{"input":{"action":"create_issue","status":"open","allow":0,"same":0,"draft":0,"budget":[0,0,0,0,0,0]},"ts":2,"wasm":3}`.
+**Negative control.** The same test against mutant MW2 (an open (unapproved) recommendation may write) built to WASM must fail. It failed, as it must: 112,000 of 1,600,000 authorize inputs differ. One of them: `{"input":{"action":"create_issue","status":"open","allow":0,"same":0,"draft":0,"consent":0,"mergeable":0,"checks":[0,0],"budget":[0,0,0,0,0,0]},"ts":2,"wasm":3}`.
 
 ## Trusted pieces
 
@@ -113,7 +126,7 @@ The shipped TypeScript (`packages/policy`) against the proved WASM:
 | Rust | rustc 1.99.1 (58cf8f9c3 2026-10-13) |
 | Node | v26.13.0 |
 | Vitest | 5.1.0 |
-| sha256 `proof/verified/src/lib.rs` | `76aac8b68004434ddc161879da2cfc66a26b1a85c5a2cb0a96f658b04c66ae70` |
-| sha256 `packages/policy/src/index.ts` | `262f9a25a7679c3d8d0ed345e6b9d65063c4594e5f89d33fbb92549ab5aadd0a` |
-| sha256 `proof/build/elevate_policy.wasm` | `bcf67fd2102b40dcf4736313424ac29c6c52dae1271f9c48080c652ac1719d87` |
-| sha256 MW2 WASM (negative control) | `5c25f5acc7d7185292228019bf4a24fc5ba8d1727e724cc0aceca9ac8ef0073c` |
+| sha256 `proof/verified/src/lib.rs` | `777c2d4ae01be423c39f60b7c76960649898edd8e18967d6de8fe60ce1c9473b` |
+| sha256 `packages/policy/src/index.ts` | `43d09d43b812168aa2333df0b7739866e3cc2fbd15932a65bfda54d6ad6609b6` |
+| sha256 `proof/build/elevate_policy.wasm` | `71cbfc9bb0e8e4554f4e0262e96ecb9f7e855fe6421e30dda3a602ec636f250c` |
+| sha256 MW2 WASM (negative control) | `c210fc039b479390ba41f120b218252f36c6dbf0ae465b2faf549bdbdbaf5c99` |

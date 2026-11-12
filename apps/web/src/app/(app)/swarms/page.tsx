@@ -1,8 +1,9 @@
 import { listSwarms } from "@elevate/engine";
-import { Cpu, GitPullRequestDraft } from "lucide-react";
+import { Cpu } from "lucide-react";
 import Link from "next/link";
+import { PrIcon, prState } from "@/components/pr";
 import { SwarmStatus } from "@/components/swarm";
-import { Empty, SpotlightCard } from "@/components/ui";
+import { Badge, Empty, SpotlightCard } from "@/components/ui";
 import { getCtx } from "@/lib/server";
 import { ago } from "@/lib/utils";
 
@@ -14,7 +15,10 @@ export default async function SwarmsPage() {
   return (
     <div className="mx-auto max-w-5xl px-4 sm:px-8 py-10">
       <h1 className="text-2xl font-semibold tracking-tight">Swarms</h1>
-      <p className="mt-1 text-sm text-muted">Approved changes, carried out by agents. Every swarm ends in a draft PR or a clear failure; nothing merges on its own.</p>
+      <p className="mt-1 text-sm text-muted">
+        Approved changes, carried out by agents. Every swarm ends in a pull request or a clear failure. elevate follows each PR&apos;s checks and merges it only
+        once they pass: when you click Merge, or on its own if auto-merge is on in Settings.
+      </p>
       <div className="mt-8 grid gap-3">
         {rows.length === 0 && (
           <Empty icon={<Cpu />} title="No swarms yet">
@@ -31,7 +35,13 @@ export default async function SwarmsPage() {
                 <div className="mt-1 truncate font-medium">{s.title}</div>
                 {s.error && <div className="mt-1 truncate text-xs text-danger">{s.error}</div>}
               </div>
-              {s.prUrl && <GitPullRequestDraft className="size-4 text-olive" />}
+              {s.next ? (
+                <Badge tone={s.next.tone} data-testid="pr-stage" data-stage={s.next.stage}>
+                  <PrIcon state={prState(s.pr, s.next.stage)} draft={s.pr?.draft} className="text-current" /> {s.next.short}
+                </Badge>
+              ) : (
+                s.prUrl && <PrIcon state="open" draft className="size-4" />
+              )}
               <SwarmStatus status={s.status} />
             </Link>
           </SpotlightCard>

@@ -219,7 +219,9 @@ export type RecommendationStatus =
   | "rejected"
   | "in_progress"
   | "pr_opened"
-  | "failed";
+  | "failed"
+  | "merged"
+  | "closed";
 
 /** Mirrors `LifecycleEvent` in @elevate/policy (kept here so db has no deps). */
 export type RecommendationEvent =
@@ -232,7 +234,9 @@ export type RecommendationEvent =
   | "fail"
   | "retry"
   | "regate"
-  | "reopen";
+  | "reopen"
+  | "merge"
+  | "close";
 
 export const recommendations = pgTable(
   "recommendations",

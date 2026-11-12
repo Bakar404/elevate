@@ -81,10 +81,10 @@ export async function rejectRecommendation(ctx: Ctx, recommendationId: string, a
   return next;
 }
 
-/** Send a recommendation back through Gate 2 (from open, gated_out or rejected). */
+/** Send a recommendation back through Gate 2 (from open, gated_out, rejected, or with its PR closed). */
 export async function regateRecommendation(ctx: Ctx, recommendationId: string, actor = "user") {
   const { rec } = await load(ctx, recommendationId);
-  await applyEvent(ctx.db, rec.id, rec.status === "rejected" ? "reopen" : "regate", {}, actor);
+  await applyEvent(ctx.db, rec.id, rec.status === "rejected" || rec.status === "closed" ? "reopen" : "regate", {}, actor);
   await enqueue(ctx.db, "recommendation.soundness", { recommendationId }, { dedupeKey: `recommendation.soundness:${recommendationId}` });
 }
 
@@ -125,6 +125,28 @@ export function planToTasks(plan: { subtasks: { key: string; title: string; inst
 /** "Publish swarm PRs as me": on by default; ELEVATE_PUBLISH_AS_ME=0 changes the default. */
 export async function publishAsMe(ctx: Ctx): Promise<boolean> {
   return getSetting<boolean>(ctx.db, "swarm.publishAsMe", process.env.ELEVATE_PUBLISH_AS_ME !== "0");
+}
+
+/** The guard for one swarm's GitHub writes. It re-reads the recommendation's status and the repo's allow flag before each write. */
+export async function swarmGuard(
+  ctx: Ctx,
+  swarm: { id: string; tenantId: string; budget: SwarmBudget; recommendationId: string },
+  repo: { fullName: string; defaultBranch: string },
+) {
+  return guardedGitHub(await ctx.writer(), {
+    repoFullName: repo.fullName,
+    defaultBranch: repo.defaultBranch,
+    budget: swarm.budget,
+    state: async () => {
+      const [s] = await ctx.db
+        .select({ status: recommendations.status, allowSwarm: repos.allowSwarm })
+        .from(recommendations)
+        .innerJoin(repos, eq(recommendations.repoId, repos.id))
+        .where(eq(recommendations.id, swarm.recommendationId));
+      return { status: (s?.status ?? "rejected") as Status, allowSwarm: s?.allowSwarm ?? false };
+    },
+    audit: (action, target, details) => audit(ctx.db, `swarm:${swarm.id}`, `github.${action}`, target, details, swarm.tenantId),
+  });
 }
 
 /**
@@ -187,20 +209,7 @@ export async function runSwarm(ctx: Ctx, swarmId: string, opts: { pollMs?: numbe
       await log(`Plan ready: ${plan.tasks.length} tasks on ${branch}`);
     }
 
-    const github = guardedGitHub(await ctx.writer(), {
-      repoFullName: repo.fullName,
-      defaultBranch: repo.defaultBranch,
-      budget: swarm.budget,
-      state: async () => {
-        const [s] = await ctx.db
-          .select({ status: recommendations.status, allowSwarm: repos.allowSwarm })
-          .from(recommendations)
-          .innerJoin(repos, eq(recommendations.repoId, repos.id))
-          .where(eq(recommendations.id, rec.id));
-        return { status: (s?.status ?? "rejected") as Status, allowSwarm: s?.allowSwarm ?? false };
-      },
-      audit: (action, target, details) => audit(ctx.db, `swarm:${swarmId}`, `github.${action}`, target, details, swarm.tenantId),
-    });
+    const github = await swarmGuard(ctx, swarm, repo);
 
     // A resumed swarm gets what is left of its time budget, with a floor so a long outage doesn't end it at once.
     const elapsed = swarm.startedAt ? Math.floor((Date.now() - swarm.startedAt.getTime()) / 60_000) : 0;
@@ -269,6 +278,8 @@ export async function runSwarm(ctx: Ctx, swarmId: string, opts: { pollMs?: numbe
     const [now] = await ctx.db.select({ status: recommendations.status }).from(recommendations).where(eq(recommendations.id, rec.id));
     if (now?.status === "in_progress") await applyEvent(ctx.db, rec.id, "pr", {}, `swarm:${swarmId}`);
     await log(`Draft PR ready: ${outcome.prUrl}`, "success");
+    // Start following its checks now rather than at the next scheduled pass.
+    await enqueue(ctx.db, "prs.track", { swarmId }, { dedupeKey: `prs.track:${swarmId}`, tenantId: swarm.tenantId }).catch(() => undefined);
     return outcome;
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);

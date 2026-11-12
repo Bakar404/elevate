@@ -6,6 +6,7 @@ export * from "./gates";
 export * from "./lifecycle";
 export * from "./matcher";
 export * from "./swarm";
+export * from "./prs";
 export * from "./pipeline";
 export * from "./tools";
 export * from "./chat";

@@ -15,7 +15,7 @@ import { copyFileSync, existsSync, mkdirSync, readFileSync, rmSync, writeFileSyn
 import { tmpdir } from "node:os";
 import { dirname, join, relative } from "node:path";
 import { fileURLToPath } from "node:url";
-import { MUTANTS, applyEdits } from "./mutation-check.mjs";
+import { DEFAULT_TOOLCHAIN, DEFAULT_VERUS, MUTANTS, applyEdits } from "./mutation-check.mjs";
 
 const here = dirname(fileURLToPath(import.meta.url));
 const root = dirname(here);
@@ -23,8 +23,8 @@ const results = join(here, "results");
 const logs = join(results, "logs");
 const lib = join(here, "verified", "src", "lib.rs");
 const wasm = join(here, "build", "elevate_policy.wasm");
-const verus = process.env.VERUS ?? join(process.env.TEMP ?? tmpdir(), "verus", "verus-arm64-win", "verus.exe");
-const toolchain = process.env.RUSTUP_TOOLCHAIN ?? "1.99.1-aarch64-pc-windows-msvc";
+const verus = process.env.VERUS ?? DEFAULT_VERUS;
+const toolchain = process.env.RUSTUP_TOOLCHAIN ?? DEFAULT_TOOLCHAIN;
 const targetDir = process.env.ELEVATE_PDD_TARGET ?? join(tmpdir(), "elevate-pdd-target");
 const NEGATIVE = "MW2";
 
@@ -131,19 +131,23 @@ const REQS = [
 	["S5", "Otherwise it passes exactly when the score reaches the risk-adjusted bar.", "soundness"],
 	["S6", "The inbox rank is exact, within 0 to 100, and monotone.", "rank"],
 	["T1", "Only an open recommendation is approved (or a failed one retried).", "transition"],
-	["T2", "A swarm starts only from approved; a PR or failure only from a running swarm.", "transition"],
+	["T2", "A swarm starts only from approved; a PR or failure only from a running swarm (or a closed PR reopened).", "transition"],
 	["T3", "Nothing reaches the inbox without passing the gates.", "transition"],
 	["T4", "Gated out can only go back to candidate.", "transition"],
-	["T5", "A draft PR is the end.", "transition"],
-	["T6", "A rejected recommendation reopens as a candidate, re-gated.", "transition"],
+	["T5", "An open PR ends only by being merged or closed.", "transition"],
+	["T6", "A rejected recommendation, or one whose PR was closed, reopens as a candidate, re-gated.", "transition"],
 	["T7", "No swarm without both gates and your approval, for every event history.", "replay"],
-	["W1", "Never merge, push to the default branch, or force-push.", "authorize"],
-	["W2", "No write until you approve.", "authorize"],
+	["T8", "A merged PR is the end, and only an open PR is merged or closed.", "transition"],
+	["W1", "Never push to the default branch or force-push.", "authorize"],
+	["W2", "No write until you approve (finishing the swarm's open PR is M1 to M3).", "authorize"],
 	["W3", "Only repos you opted in.", "authorize"],
 	["W4", "Only the recommendation's own repo.", "authorize"],
 	["W5", "Pull requests are drafts.", "authorize"],
 	["W6", "Agent work stops at the budget; publishing finished work doesn't.", "authorize"],
 	["W7", "Otherwise the write is allowed, and only then.", "authorize"],
+	["M1", "Only the swarm's open PR is merged: never mid-run.", "authorize"],
+	["M2", "Merging or closing the PR needs your consent (a click, or auto-merge on).", "authorize"],
+	["M3", "Only a verified PR is merged: a check passed, none failing or pending, no conflicts.", "authorize"],
 ];
 const proved = steps.find((s) => s.id === "prove")?.ok;
 const sec = Object.fromEntries(diff.sections.map((s) => [s.name, s]));
@@ -164,7 +168,7 @@ for (const s of steps) md.push(`| ${s.name} | \`${s.command}\` | ${s.exit} | ${s
 md.push("", "## Mutation check", "", "One bug planted per clause in a scratch copy. Each must fail the proof on the clause it targets; one that proves means that clause rules out nothing.", "");
 md.push("| Mutant | Planted bug | Aimed at | Verus rejected it on | Result |", "|---|---|---|---|---|");
 for (const m of mutation.mutants) md.push(`| ${m.id} | ${m.bug} | ${m.target} | ${m.caughtBy.join(", ") || "nothing"} | ${m.ok ? "caught" : "**NOT CAUGHT**"} |`);
-md.push("", `**The draft-spec gap.** W1 to W6 only say when a write is refused. With them alone, today's guard ${mutation.draftGap?.withoutW7?.todayProves ? "proves" : "fails"} and so ${mutation.draftGap?.withoutW7?.mw7Proves ? "does" : "does not"} MW7, a guard that refuses every draft PR, so the safety clauses permit a guard that never lets a swarm deliver. W7 pins the exact rule.`);
+md.push("", `**The draft-spec gap.** W1 to W6 and M1 to M3 only say when a write is refused. With them alone, today's guard ${mutation.draftGap?.withoutW7?.todayProves ? "proves" : "fails"} and so ${mutation.draftGap?.withoutW7?.mw7Proves ? "does" : "does not"} MW7, a guard that refuses every draft PR, so the safety clauses permit a guard that never lets a swarm deliver. W7 pins the exact rule.`);
 md.push("", "## The differential test (D)", "", "The shipped TypeScript (`packages/policy`) against the proved WASM:", "", "| Section | Inputs | Mismatches | Outcomes seen |", "|---|---|---|---|");
 for (const s of diff.sections) md.push(`| ${s.name} | ${fmt(s.inputs)} | ${fmt(s.mismatches)} | ${Object.keys(s.outcomes).length} |`);
 md.push("", `**Negative control.** The same test against mutant ${NEGATIVE} (${mutant.bug}) built to WASM must fail. ${negSection ? `It failed, as it must: ${fmt(negSection.mismatches)} of ${fmt(negSection.inputs)} ${negSection.name} inputs differ. One of them: \`${JSON.stringify(negSection.example)}\`.` : "**It did not fail.**"}`);

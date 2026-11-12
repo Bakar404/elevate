@@ -1,8 +1,9 @@
-import { and, asc, auditLog, desc, eq, events, items, recommendations, repos, sources, sql, swarms, swarmTasks, techniques, threads, messages } from "@elevate/db";
+import { and, asc, auditLog, desc, eq, events, inArray, isNotNull, items, recommendations, repos, sources, sql, swarms, swarmTasks, techniques, threads, messages } from "@elevate/db";
 import { defaultSources, ECOSYSTEM_LABEL, sourceEcosystem } from "@elevate/sources";
 import { accessProfile, accessView, verdictFor } from "./access";
 import type { Ctx } from "./context";
 import { focusQueries } from "./ingest";
+import { autoMerge, prCheckMinutes, prNextStep, type PrNextStep, type SwarmPr } from "./prs";
 
 /**
  * Read models for the UI. Everything the pages show comes from here. Repos the user turned off
@@ -22,6 +23,7 @@ export async function stats(ctx: Ctx) {
       (select count(*)::int from recommendations r join repos p on p.id = r.repo_id where p.watch and r.status = 'open') as open,
       (select count(*)::int from recommendations r join repos p on p.id = r.repo_id where p.watch and r.status = 'gated_out') as "gatedOut",
       (select count(*)::int from recommendations r join repos p on p.id = r.repo_id where p.watch and r.status = 'pr_opened') as prs,
+      (select count(*)::int from recommendations r join repos p on p.id = r.repo_id where p.watch and r.status = 'merged') as merged,
       (select count(*)::int from swarms where status in ('queued','planning','running')) as "activeSwarms"
   `).then((r) => (Array.isArray(r) ? r : (r as { rows: Record<string, number>[] }).rows));
   // Open recommendations the user can no longer act on are shown as filtered, so don't count them as waiting.
@@ -44,6 +46,7 @@ export async function stats(ctx: Ctx) {
     open: number;
     gatedOut: number;
     prs: number;
+    merged: number;
     activeSwarms: number;
   };
 }
@@ -68,6 +71,30 @@ const recColumns = {
 
 export type RecommendationRow = Awaited<ReturnType<typeof listRecommendations>>[number];
 
+/** A recommendation's pull request: the one its latest finished swarm opened, and what it's waiting on. */
+export type RecPr = { swarmId: string; url: string; status: SwarmPr | null; next: PrNextStep };
+
+const PR_STATUSES = ["pr_opened", "merged", "closed"] as const;
+
+async function recPrs(ctx: Ctx, recs: { id: string; status: string; allowSwarm: boolean }[]) {
+  const out = new Map<string, RecPr>();
+  const ids = recs.filter((r) => (PR_STATUSES as readonly string[]).includes(r.status)).map((r) => r.id);
+  if (!ids.length) return out;
+  const rows = await ctx.db
+    .select({ id: swarms.id, rec: swarms.recommendationId, prUrl: swarms.prUrl, result: swarms.result })
+    .from(swarms)
+    .where(and(inArray(swarms.recommendationId, ids), eq(swarms.status, "succeeded"), isNotNull(swarms.prUrl)))
+    .orderBy(desc(swarms.createdAt));
+  const auto = await autoMerge(ctx);
+  for (const s of rows) {
+    const rec = recs.find((r) => r.id === s.rec);
+    if (!rec || out.has(s.rec)) continue;
+    const status = (s.result as { pr?: SwarmPr } | null)?.pr ?? null;
+    out.set(s.rec, { swarmId: s.id, url: s.prUrl!, status, next: prNextStep(status ?? undefined, { recStatus: rec.status, allowSwarm: rec.allowSwarm, autoMerge: auto }) });
+  }
+  return out;
+}
+
 export async function listRecommendations(ctx: Ctx, status?: string) {
   const access = await accessProfile(ctx);
   const rows = await ctx.db
@@ -78,11 +105,17 @@ export async function listRecommendations(ctx: Ctx, status?: string) {
     .where(and(eq(repos.watch, true), status ? eq(recommendations.status, status as never) : undefined))
     .orderBy(desc(recommendations.score), desc(recommendations.createdAt))
     .limit(200);
-  return rows.map(({ techniqueSummary, claims, ...r }) => ({
-    ...r,
-    /** Set when the user can't act on the technique any more (replaced model, product not connected). */
-    blocked: accessView({ name: r.technique, summary: techniqueSummary, claims }, access).reason,
-  }));
+  const prs = await recPrs(ctx, rows);
+  return rows.map(({ techniqueSummary, claims, ...r }) => {
+    const pr = prs.get(r.id);
+    return {
+      ...r,
+      /** Set when the user can't act on the technique any more (replaced model, product not connected). */
+      blocked: accessView({ name: r.technique, summary: techniqueSummary, claims }, access).reason,
+      /** What its pull request is waiting on, while it has one. */
+      pr: pr ? { swarmId: pr.swarmId, url: pr.url, next: pr.next } : null,
+    };
+  });
 }
 
 export async function getRecommendation(ctx: Ctx, id: string) {
@@ -102,7 +135,8 @@ export async function getRecommendation(ctx: Ctx, id: string) {
       .where(eq(items.techniqueId, rec.techniqueId)),
     ctx.db.select().from(swarms).where(eq(swarms.recommendationId, id)).orderBy(desc(swarms.createdAt)),
   ]);
-  return { ...rec, access, items: sourcesFor, swarms: swarmRows };
+  const pr = (await recPrs(ctx, [rec])).get(rec.id) ?? null;
+  return { ...rec, access, items: sourcesFor, swarms: swarmRows, pr, autoMerge: await autoMerge(ctx) };
 }
 
 export async function listRepos(ctx: Ctx) {
@@ -131,6 +165,7 @@ export async function listRepos(ctx: Ctx) {
       profiledSha: r.profiledSha,
       open: n("open"),
       prs: n("pr_opened"),
+      merged: n("merged"),
     };
   });
 }
@@ -363,7 +398,7 @@ export async function removeSource(ctx: Ctx, id: string) {
 }
 
 export async function listSwarms(ctx: Ctx) {
-  return ctx.db
+  const rows = await ctx.db
     .select({
       id: swarms.id,
       status: swarms.status,
@@ -377,14 +412,31 @@ export async function listSwarms(ctx: Ctx) {
       finishedAt: swarms.finishedAt,
       title: recommendations.title,
       recommendationId: recommendations.id,
+      recStatus: recommendations.status,
       repo: repos.fullName,
+      allowSwarm: repos.allowSwarm,
+      result: swarms.result,
     })
     .from(swarms)
     .innerJoin(recommendations, eq(swarms.recommendationId, recommendations.id))
     .innerJoin(repos, eq(swarms.repoId, repos.id))
     .orderBy(desc(swarms.createdAt))
     .limit(100);
+  const auto = await autoMerge(ctx);
+  // Like the PR tracker: each recommendation's latest finished swarm owns its PR.
+  const owner = new Map<string, string>();
+  for (const r of rows) if (r.status === "succeeded" && r.prUrl && !owner.has(r.recommendationId)) owner.set(r.recommendationId, r.id);
+  return rows.map(({ result, ...r }) => {
+    const pr = (result as { pr?: SwarmPr } | null)?.pr;
+    const next =
+      r.status === "succeeded" && r.prUrl
+        ? prNextStep(pr, { recStatus: r.recStatus, allowSwarm: r.allowSwarm, autoMerge: auto, owns: owner.get(r.recommendationId) === r.id })
+        : undefined;
+    return { ...r, pr, next };
+  });
 }
+
+export type SwarmRow = Awaited<ReturnType<typeof listSwarms>>[number];
 
 export async function getSwarm(ctx: Ctx, id: string) {
   const [s] = (await listSwarms(ctx)).filter((x) => x.id === id);
@@ -393,7 +445,7 @@ export async function getSwarm(ctx: Ctx, id: string) {
   const tasks = await ctx.db.select().from(swarmTasks).where(eq(swarmTasks.swarmId, id));
   const log = await ctx.db.select().from(events).where(eq(events.swarmId, id)).orderBy(asc(events.id)).limit(500);
   const audits = await ctx.db.select().from(auditLog).where(eq(auditLog.actor, `swarm:${id}`)).orderBy(asc(auditLog.id));
-  return { ...s, ...full, tasks, events: log, audits };
+  return { ...s, ...full, tasks, events: log, audits, autoMerge: await autoMerge(ctx), prCheckMinutes: prCheckMinutes() };
 }
 
 export async function listThreads(ctx: Ctx) {

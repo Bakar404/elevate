@@ -87,7 +87,7 @@ test("hype is filtered on the radar with its reasons", async ({ page }) => {
   await expect(page.getByText(/judged it not legitimate/i).first()).toBeVisible();
 });
 
-test("approve → allow repo → swarm → draft PR, with history and audit trail", async ({ page }) => {
+test("approve → allow repo → swarm → PR → verified → merge, with history and audit trail", async ({ page }) => {
   const [rec] = await waitForOpenRecs(page);
   await page.goto(`/r/${rec!.id}`);
   await expect(page.getByTestId("gate-legitimacy")).toContainText("passed");
@@ -99,13 +99,29 @@ test("approve → allow repo → swarm → draft PR, with history and audit trai
     await allow.click();
   }
   await page.getByTestId("launch").click();
-  await expect(page.getByText("draft PR open").first()).toBeVisible({ timeout: 90_000 });
+  await expect(page.getByText("PR open").first()).toBeVisible({ timeout: 90_000 });
   await expect(page.locator('[data-testid="history"] [data-event="pr"]')).toBeVisible();
 
   await page.getByRole("link", { name: /fake · succeeded/ }).click();
   await expect(page.getByTestId("pr-link")).toHaveAttribute("href", /\/pull\//);
   await expect(page.getByTestId("task-graph")).toBeVisible();
   await expect(page.getByTestId("audits")).toContainText(rec!.repo);
+
+  // elevate follows the PR. The fake's CI passes, so it's verified and waits for your Merge (auto-merge is off).
+  const panel = page.getByTestId("pr-panel");
+  await expect(panel).toBeVisible();
+  if ((await panel.getAttribute("data-stage")) === "unchecked") await page.getByTestId("refresh-pr").click();
+  await expect(panel).toHaveAttribute("data-stage", "ready");
+  await expect(panel.locator('[data-check-state="passed"]')).toHaveCount(1);
+  await expect(page.getByTestId("auto-merge-state")).toContainText("Auto-merge off");
+  await page.getByTestId("merge-pr").click();
+  await expect(panel).toHaveAttribute("data-stage", "merged");
+  await expect(page.getByTestId("merge-pr")).toHaveCount(0);
+  await expect(page.getByTestId("audits")).toContainText("merge_pr");
+
+  await page.goto(`/r/${rec!.id}`);
+  await expect(page.locator('[data-testid="history"] [data-event="merge"]')).toBeVisible();
+  await expect(page.getByTestId("pr-panel")).toHaveAttribute("data-stage", "merged");
 
   const after = (await (await page.request.post(`/api/recommendations/${rec!.id}/approve`, { data: { executor: "fake" }, headers: { origin: new URL(page.url()).origin } })).status());
   expect(after).toBe(409);
@@ -149,7 +165,15 @@ test("settings shows the proof receipt", async ({ page }) => {
   await expect(page.getByTestId("pipeline-model")).toBeVisible();
   await expect(page.getByTestId("chat-model")).toBeVisible();
   await expect(page.getByTestId("proof-card")).toContainText(/receipt: pass/i);
-  await expect(page.getByTestId("proof-card")).toContainText("27 of 27 mutants");
+  await expect(page.getByTestId("proof-card")).toContainText("36 of 36 mutants");
+  await expect(page.getByTestId("proof-card").locator("summary")).toHaveText("30 requirements");
+});
+
+test("the auto-merge switch is where the PR panel's link points", async ({ page }) => {
+  await page.goto("/settings#auto-merge");
+  const toggle = page.getByTestId("auto-merge");
+  await expect(toggle).toHaveAttribute("aria-checked", "false");
+  await expect(toggle).toBeInViewport();
 });
 
 test("repo search matches by stack and domain, keeps state in the URL, and filters", async ({ page }) => {

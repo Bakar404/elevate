@@ -107,7 +107,8 @@ export default async function ReposPage({ searchParams }: { searchParams: Promis
                       {r.open} ready
                     </Link>
                   )}
-                  {r.prs > 0 && <span className="text-sky">{r.prs} draft PR{r.prs === 1 ? "" : "s"}</span>}
+                  {r.prs > 0 && <span className="text-sky">{r.prs} open PR{r.prs === 1 ? "" : "s"}</span>}
+                  {r.merged > 0 && <span className="text-olive">{r.merged} merged</span>}
                 </div>
               </div>
               <RepoToggles id={r.id} name={r.fullName} watch={r.watch} allowSwarm={r.allowSwarm} />

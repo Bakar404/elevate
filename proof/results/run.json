@@ -1,14 +1,14 @@
 {
 	"pass": true,
-	"at": "2026-11-11 02:13:54",
-	"gitHead": "570e21b",
+	"at": "2026-11-12 20:06:18",
+	"gitHead": "a1ce9c0",
 	"steps": [
 		{
 			"id": "prove",
 			"name": "Prove",
 			"command": "verus proof/verified/src/lib.rs --crate-type=lib --edition=2021",
 			"exit": 0,
-			"seconds": 3.648,
+			"seconds": 4.111,
 			"ok": true,
 			"detail": "12 verified, 0 errors"
 		},
@@ -17,36 +17,36 @@
 			"name": "Mutation check",
 			"command": "node proof/mutation-check.mjs",
 			"exit": 0,
-			"seconds": 32.765,
+			"seconds": 59.32,
 			"ok": true,
-			"detail": "27 of 27 mutants rejected on their clause; draft gap shown"
+			"detail": "36 of 36 mutants rejected on their clause; draft gap shown"
 		},
 		{
 			"id": "build",
 			"name": "Build to WASM",
 			"command": "cargo build --release --target wasm32-unknown-unknown",
 			"exit": 0,
-			"seconds": 3.131,
+			"seconds": 29.137,
 			"ok": true,
-			"detail": "proof/build/elevate_policy.wasm, 22413 bytes"
+			"detail": "proof/build/elevate_policy.wasm, 22720 bytes"
 		},
 		{
 			"id": "test",
 			"name": "Test D",
 			"command": "vitest run packages/policy/test/differential.test.ts",
 			"exit": 0,
-			"seconds": 1.651,
+			"seconds": 5.297,
 			"ok": true,
-			"detail": "0 of 2,302,396 inputs differ"
+			"detail": "0 of 3,982,778 inputs differ"
 		},
 		{
 			"id": "negative-control",
 			"name": "Negative control",
 			"command": "MW2 to WASM; vitest run differential.test.ts",
 			"exit": 1,
-			"seconds": 2.5389999999999997,
+			"seconds": 27.237,
 			"ok": true,
-			"detail": "D failed, as it must: 7,000 of 80,000 authorize inputs differ"
+			"detail": "D failed, as it must: 112,000 of 1,600,000 authorize inputs differ"
 		}
 	],
 	"versions": {

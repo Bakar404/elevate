@@ -4,10 +4,14 @@ import { useRouter } from "next/navigation";
 import { useEffect, useRef } from "react";
 import { toast } from "sonner";
 
-type Ev = { id: number; kind: string; level: "info" | "success" | "warn" | "error"; message: string; swarmId: string | null };
+type Ev = { id: number; kind: string; level: "info" | "success" | "warn" | "error"; message: string; swarmId: string | null; data?: { by?: string } | null };
 
-/** Worth interrupting for: gate verdicts, finished swarms, failures. Per-task chatter stays in the swarm view. */
-const toastable = (e: Ev) => e.kind !== "swarm.task" && (e.level !== "info" || e.kind === "gate.soundness" || e.kind === "repos.synced");
+/**
+ * Worth interrupting for: gate verdicts, finished swarms, failures. Per-task chatter stays in the swarm view,
+ * and what you just did yourself (by: "you") already has its own toast.
+ */
+const toastable = (e: Ev) =>
+  e.kind !== "swarm.task" && e.data?.by !== "you" && (e.level !== "info" || e.kind === "gate.soundness" || e.kind === "repos.synced");
 
 /** Tails /api/events and refreshes server components (throttled). Notable events become toasts. */
 export function LiveRefresh() {

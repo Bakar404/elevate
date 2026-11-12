@@ -118,3 +118,137 @@ export async function squashPullRequest(gh: Octokit, fullName: string, pr: numbe
 export async function closePullRequest(gh: Octokit, fullName: string, pr: number) {
   await gh.pulls.update({ ...split(fullName), pull_number: pr, state: "closed" });
 }
+
+/** One check on a PR's head commit: passed, neutral (skipped), failing (failed, cancelled, timed out) or pending. */
+export type CheckState = "passed" | "neutral" | "failing" | "pending";
+export type PrCheck = { name: string; state: CheckState; url: string | null };
+
+export type PrStatus = {
+  number: number;
+  url: string;
+  title: string;
+  state: "open" | "closed" | "merged";
+  draft: boolean;
+  /** Open, GitHub computed it mergeable, and no conflicts, required reviews or out-of-date base block it. */
+  mergeable: boolean;
+  /** GitHub's own word: clean, unstable, dirty (conflicts), blocked, behind, draft, unknown (still computing). */
+  mergeableState: string;
+  headSha: string;
+  headRef: string;
+  baseRef: string;
+  /** The head branch lives in this repo (not a fork), so elevate may delete it after merging. */
+  sameRepoHead: boolean;
+  checks: PrCheck[];
+  passed: number;
+  /** Checks that failed, were cancelled, timed out, or haven't finished. */
+  blocking: number;
+  /** Workflow runs on the head commit waiting for someone to approve them on GitHub. */
+  awaitingApproval: number;
+  mergedAt: string | null;
+  closedAt: string | null;
+};
+
+/** M3's "verified": a check passed, none failing or pending, and GitHub can merge it. */
+export const prVerified = (s: Pick<PrStatus, "state" | "passed" | "blocking" | "mergeable">) =>
+  s.state === "open" && s.passed > 0 && s.blocking === 0 && s.mergeable;
+
+export function checkRunState(status: string | null | undefined, conclusion: string | null | undefined): CheckState {
+  if (status !== "completed") return "pending";
+  if (conclusion === "success") return "passed";
+  if (conclusion === "neutral" || conclusion === "skipped") return "neutral";
+  return "failing";
+}
+
+export function commitStatusState(state: string): CheckState {
+  return state === "success" ? "passed" : state === "pending" ? "pending" : "failing";
+}
+
+/** Latest run per check name wins: a re-run or a later workflow replaces the earlier result. */
+export function summarizeChecks(runs: { id: number; name: string; status: string | null; conclusion: string | null; html_url: string | null }[], statuses: { context: string; state: string; target_url: string | null }[]) {
+  const latest = new Map<string, (typeof runs)[number]>();
+  for (const r of runs) if ((latest.get(r.name)?.id ?? -1) < r.id) latest.set(r.name, r);
+  const checks: PrCheck[] = [
+    ...[...latest.values()].map((r) => ({ name: r.name, state: checkRunState(r.status, r.conclusion), url: r.html_url })),
+    ...statuses.map((s) => ({ name: s.context, state: commitStatusState(s.state), url: s.target_url })),
+  ].sort((a, b) => a.name.localeCompare(b.name));
+  return {
+    checks,
+    passed: checks.filter((c) => c.state === "passed").length,
+    blocking: checks.filter((c) => c.state === "failing" || c.state === "pending").length,
+  };
+}
+
+const UNMERGEABLE = new Set(["dirty", "blocked", "behind"]);
+
+/** Read-only: a PR's state, whether it can merge, and every check on its head commit. */
+export async function pullRequestStatus(gh: Octokit, fullName: string, pr: number): Promise<PrStatus> {
+  const r = split(fullName);
+  const { data: p } = await gh.pulls.get({ ...r, pull_number: pr });
+  const ref = p.head.sha;
+  const [runs, combined, waiting] = await Promise.all([
+    gh.paginate(gh.checks.listForRef, { ...r, ref, per_page: 100 }),
+    gh.repos.getCombinedStatusForRef({ ...r, ref, per_page: 100 }).then((x) => x.data.statuses),
+    gh.actions
+      .listWorkflowRunsForRepo({ ...r, head_sha: ref, status: "action_required", per_page: 20 })
+      .then((x) => x.data.total_count)
+      .catch(() => 0),
+  ]);
+  const state = p.merged ? "merged" : p.state === "open" ? "open" : "closed";
+  return {
+    number: p.number,
+    url: p.html_url,
+    title: p.title,
+    state,
+    draft: Boolean(p.draft),
+    mergeable: state === "open" && p.mergeable === true && !UNMERGEABLE.has(p.mergeable_state),
+    mergeableState: p.mergeable_state ?? "unknown",
+    headSha: ref,
+    headRef: p.head.ref,
+    baseRef: p.base.ref,
+    sameRepoHead: p.head.repo?.full_name?.toLowerCase() === fullName.toLowerCase(),
+    ...summarizeChecks(runs, combined),
+    awaitingApproval: waiting,
+    mergedAt: p.merged_at,
+    closedAt: p.closed_at,
+  };
+}
+
+/**
+ * Merge a PR exactly at `sha` (GitHub refuses if the head moved since it was checked). Marks a
+ * draft ready for review first, squashes when the repo allows it, then deletes the head branch.
+ */
+export async function mergePullRequest(gh: Octokit, fullName: string, pr: number, opts: { sha: string; deleteBranch?: string }) {
+  const r = split(fullName);
+  const [{ data: p }, { data: repo }] = await Promise.all([gh.pulls.get({ ...r, pull_number: pr }), gh.repos.get(r)]);
+  if (p.draft) {
+    await gh.graphql(`mutation($id:ID!){ markPullRequestReadyForReview(input:{pullRequestId:$id}){ pullRequest { isDraft } } }`, { id: p.node_id });
+  }
+  const method = repo.allow_squash_merge !== false ? "squash" : repo.allow_merge_commit !== false ? "merge" : "rebase";
+  const attempt = () =>
+    gh.pulls.merge({
+      ...r,
+      pull_number: pr,
+      sha: opts.sha,
+      merge_method: method,
+      ...(method === "squash" ? { commit_title: `${p.title} (#${pr})` } : {}),
+    });
+  let res: Awaited<ReturnType<typeof attempt>> | undefined;
+  // Right after leaving draft, GitHub can briefly still answer 405 while it recomputes mergeability.
+  for (let i = 0; !res; i++) {
+    try {
+      res = await attempt();
+    } catch (err) {
+      if (!p.draft || i >= 3 || (err as { status?: number }).status !== 405) throw err;
+      await new Promise((ok) => setTimeout(ok, 1500));
+    }
+  }
+  const merged = res.data;
+  let branchDeleted = false;
+  if (opts.deleteBranch && opts.deleteBranch !== repo.default_branch) {
+    branchDeleted = await gh.git
+      .deleteRef({ ...r, ref: `heads/${opts.deleteBranch}` })
+      .then(() => true)
+      .catch(() => false);
+  }
+  return { sha: merged.sha, method, branchDeleted };
+}

@@ -1,7 +1,8 @@
 import type { RecommendationRow } from "@elevate/engine";
-import { ArrowUpRight, Ban, GitPullRequestDraft } from "lucide-react";
+import { ArrowUpRight, Ban } from "lucide-react";
 import Link from "next/link";
 import { ago } from "@/lib/utils";
+import { PrIcon } from "./pr";
 import { Badge, ScoreRing, SpotlightCard, type Tone } from "./ui";
 
 export const STATUS: Record<string, { label: string; tone: Tone }> = {
@@ -11,7 +12,9 @@ export const STATUS: Record<string, { label: string; tone: Tone }> = {
   approved: { label: "approved", tone: "sky" },
   rejected: { label: "rejected", tone: "neutral" },
   in_progress: { label: "swarm running", tone: "sky" },
-  pr_opened: { label: "draft PR open", tone: "olive" },
+  pr_opened: { label: "PR open", tone: "olive" },
+  merged: { label: "merged", tone: "olive" },
+  closed: { label: "PR closed", tone: "neutral" },
   failed: { label: "swarm failed", tone: "danger" },
 };
 
@@ -51,9 +54,9 @@ export function RecCard({ r, index = 0 }: { r: RecommendationRow; index?: number
             )}
             <Badge>effort {effort[r.hypothesis.effort] ?? r.hypothesis.effort}</Badge>
             <Badge tone={r.hypothesis.risk === "high" ? "danger" : r.hypothesis.risk === "medium" ? "sand" : "neutral"}>{r.hypothesis.risk} risk</Badge>
-            {r.status === "pr_opened" && (
-              <Badge tone="olive">
-                <GitPullRequestDraft /> draft PR
+            {r.status === "pr_opened" && r.pr && (
+              <Badge tone={r.pr.next.tone} data-testid="pr-stage" data-stage={r.pr.next.stage}>
+                <PrIcon state="open" className="text-current" /> {r.pr.next.short}
               </Badge>
             )}
           </div>

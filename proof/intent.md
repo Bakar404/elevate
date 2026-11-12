@@ -20,7 +20,7 @@ These are the four pure decisions that stand between a headline on the internet 
 | Gate 1, legitimacy | `legitimacyDecision` | Hype reaches your inbox looking verified. |
 | Gate 2, soundness and impact | `soundnessDecision`, `recommendationScore` | A change that won't make a difference, or can't be measured, gets proposed. |
 | The recommendation lifecycle | `transition` | A swarm starts on something you never approved, or that never passed the gates. |
-| The write guard | `authorizeWrite` | An agent writes to a repo you didn't allow, merges, or overspends. |
+| The write guard | `authorizeWrite` | An agent writes to a repo you didn't allow, merges something unverified, or overspends. |
 
 These are not in scope, and are covered elsewhere or not at all:
 
@@ -60,38 +60,42 @@ Inputs (each normalized to an integer from 0 to 100):
 
 ### The lifecycle: "launches a swarm upon approval after verifying"
 
-The statuses are `candidate`, `gated_out`, `open`, `approved`, `rejected`, `in_progress`, `pr_opened` and `failed`. The events are `gate_pass`, `gate_fail`, `approve`, `reject`, `start`, `pr`, `fail`, `retry`, `regate` and `reopen`.
+The statuses are `candidate`, `gated_out`, `open`, `approved`, `rejected`, `in_progress`, `pr_opened`, `failed`, `merged` and `closed`. The events are `gate_pass`, `gate_fail`, `approve`, `reject`, `start`, `pr`, `fail`, `retry`, `regate`, `reopen`, `merge` and `close`.
 
 | # | Requirement | Spec |
 |---|---|---|
 | T1 | Only an open recommendation can be approved. The one other way into `approved` is retrying a failed run, which you approved before. | into approved |
-| T2 | A swarm starts only from `approved`. | into in_progress |
+| T2 | A swarm starts only from `approved`. A failure only comes from a running swarm, and so does a PR, except that a closed PR reopened on GitHub is open again (decision D8). | into in_progress, failed, pr_opened |
 | T3 | Nothing reaches your inbox (`open`) without passing both gates. | into open |
 | T4 | A recommendation filtered out by the gates can only go back to `candidate`, to be checked again. It can't be approved or started from there. | gated_out exits |
-| T5 | A draft PR is the end: `pr_opened` has no way out. | terminal |
-| T6 | A rejected recommendation reopens as a `candidate`, so it is re-gated against today's evidence rather than going straight back to your inbox. | reopen |
-| T7 | **No swarm without both gates and your approval.** For every sequence of events from `candidate`, if the recommendation ends in `approved`, `in_progress`, `pr_opened` or `failed`, the sequence contains a `gate_pass`, and an `approve` that comes after it. | proved by induction over every event sequence |
+| T5 | An open PR ends only by being merged or closed: from `pr_opened`, `merge` leads to `merged`, `close` to `closed`, and nothing else is allowed. | pr_opened exits |
+| T6 | A rejected recommendation, or one whose PR was closed, reopens as a `candidate`, so it is re-gated against today's evidence rather than going straight back to your inbox. | reopen |
+| T7 | **No swarm without both gates and your approval.** For every sequence of events from `candidate`, if the recommendation ends in `approved`, `in_progress`, `pr_opened`, `failed`, `merged` or `closed`, the sequence contains a `gate_pass`, and an `approve` that comes after it. | proved by induction over every event sequence |
+| T8 | A merged PR is the end: `merged` has no way out. Only an open PR becomes `merged` or `closed`. | terminal, into merged and closed |
 
 ### The write guard: "upon approval"
 
-The actions are `create_issue`, `comment`, `assign_agent`, `run_local_agent`, `push_branch`, `open_pr`, `close_pr`, `merge_pr`, `push_default_branch` and `force_push`. The guard answers `allow` or a single reason for refusing. `close_pr` lets a swarm close the coding agent's own pull request after republishing its work under your account (decision D6); it is an ordinary write, so W2–W4 apply.
+The actions are `create_issue`, `comment`, `assign_agent`, `run_local_agent`, `push_branch`, `open_pr`, `close_pr`, `merge_pr`, `push_default_branch` and `force_push`. The guard answers `allow` or a single reason for refusing. `close_pr` lets a swarm close the coding agent's own pull request after republishing its work under your account (decision D6); during a run it is an ordinary write, so W2–W4 apply. Once the swarm's PR is open, merging or closing it is *finishing* the PR, and M1–M3 decide it (decision D7). Besides the action and the recommendation's status, each request carries `consent` (you clicked, or turned auto-merge on), the number of the PR's checks that passed and that block (failed, cancelled or still running), and whether GitHub can merge it cleanly.
 
 | # | Requirement | Spec |
 |---|---|---|
-| W1 | elevate never merges, never pushes to the default branch, and never force-pushes, whatever else holds. Those requests are refused as `forbidden`. | forbidden |
-| W2 | No write happens until you approve. The recommendation must be `approved` or `in_progress`. | approval |
+| W1 | elevate never pushes to the default branch and never force-pushes, whatever else holds. Those requests are refused as `forbidden`. | forbidden |
+| W2 | No write happens until you approve. The recommendation must be `approved` or `in_progress`; the one exception is finishing the swarm's open PR, which M1–M3 govern. | approval |
 | W3 | Only repos you opted in (`allowSwarm`) are written to. | allow-list |
 | W4 | A swarm writes only to its own recommendation's repo. | same repo |
 | W5 | Pull requests are drafts. A non-draft `open_pr` is refused. | draft only |
 | W6 | Spending stops at the budget. An action that starts agent work (`assign_agent`, `run_local_agent`) is refused once tasks, minutes or agent turns reach their limit. Publishing finished work (issue, comment, push to the swarm branch, draft PR) is still allowed (decision D3). | budget |
 | W7 | Otherwise the write is allowed, and only then. | exact iff |
+| M1 | Only the swarm's open PR is merged. `merge_pr` is refused unless the recommendation is `pr_opened`: never mid-run, never before the swarm opened it. | merge only at pr_opened |
+| M2 | Merging or closing the PR needs your consent: you clicked it, or you turned on auto-merge. Without it the answer is `no_consent`. | consent |
+| M3 | Only a verified PR is merged: at least one check passed, none failed or is still running, and GitHub can merge it without conflicts. Otherwise the answer is `not_verified`. | verified |
 
 ## Trusted pieces, and how each is checked
 
 - **TB1. The WASM shim.** `*_code` functions sit outside `verus!` and turn integer codes into enums and back.
   - *Check:* D, the differential test, and its negative control.
 - **TB2. The TypeScript is the code that runs.** The app runs `packages/policy`, not the WASM (decision D1).
-  - *Check:* D compares them on every input class. Gate inputs are exhaustive over the score grid at the threshold boundaries. The lifecycle covers all 80 status and event pairs. The guard covers every action and status at the budget boundaries. Random sampling covers the rest of the domain.
+  - *Check:* D compares them on every input class. Gate inputs are exhaustive over the score grid at the threshold boundaries. The lifecycle covers all 120 status and event pairs. The guard covers every action and status, with and without consent, at the budget and check-count boundaries. Random sampling covers the rest of the domain.
   - *Check that D can fail:* the negative control runs D against mutant MW2, which drops the approval check, built to WASM. D must fail.
 - **TB3. Every GitHub write goes through the guard.**
   - *Check:* `guardedGitHub` is the only GitHub writer that executors receive. A unit test runs a fake executor against a guard that refuses everything and asserts that no write reaches the fake GitHub.
@@ -107,4 +111,6 @@ The actions are `create_issue`, `comment`, `assign_agent`, `run_local_agent`, `p
 - **D3. What the budget stops.** The budget stops new agent work only. Pushing, commenting and opening the draft PR stay allowed, so a swarm that hits its limit can still hand you what it built. The alternative is to stop every write.
 - **D4. Reopen.** A reopened recommendation is re-gated (T6) instead of returning straight to `open`.
 - **D5. Threshold defaults.** The defaults are legitimacy 60, prior floor 30, and soundness 65. They are tuned against `fixtures/gate-eval.json` and stored in settings.
-- **D6. Closing a pull request is allowed, merging is not.** With "Publish swarm PRs as me" on, elevate squashes the coding agent's finished branch into one commit on the swarm branch, opens a draft PR under your account, and closes the agent's PR. Closing is reversible and changes no code, so it is not on the forbidden list. The alternative is to leave two open PRs.
+- **D6. Closing a pull request is allowed.** With "Publish swarm PRs as me" on, elevate squashes the coding agent's finished branch into one commit on the swarm branch, opens a draft PR under your account, and closes the agent's PR. Closing is reversible and changes no code, so it is not on the forbidden list. The alternative is to leave two open PRs.
+- **D7. Merging only what GitHub verified, only with your consent.** Merging used to be forbidden outright, which left every finished swarm waiting on a manual merge. Now the swarm's open PR may be merged when you click Merge, or when you turn on "Auto-merge verified PRs" (consent, M2), and only when its checks verify it (M3): at least one check passed, none failed, was cancelled or is still running, and GitHub reports no conflicts. A PR with no checks at all is never merged by elevate, because nothing verified it; you review and merge it on GitHub. elevate marks the draft ready for review as part of merging, squashes it pinned to the head commit it checked (so a push after the check can't slip in), and deletes the swarm branch. Pushing to the default branch and force-pushing stay forbidden (W1). The alternative is to keep merging manual.
+- **D8. A closed PR.** A PR closed without merging (by you on GitHub, or with Close in elevate) moves the recommendation to `closed`. If the PR is reopened on GitHub, elevate follows it back to `pr_opened` (T2). Reopen in elevate sends it back through Gate 2 as a `candidate` (T6), like a rejected one.

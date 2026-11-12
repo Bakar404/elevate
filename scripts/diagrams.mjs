@@ -99,7 +99,7 @@ function pipeline(t) {
   b.push(node(t, { x: 1030, y: 120, w: 140, kicker: "swarm", title: "Plan → review", sub: "agents in parallel" }));
   b.push(edge(t, "M 1100 184 L 1100 274", "sand"), arrow(t, 1100, 274, "sand", "d"));
   b.push(`<circle cx="1100" cy="312" r="9" fill="${t.sand}" opacity="0.5" class="ping"/>`);
-  b.push(node(t, { x: 1030, y: 280, w: 140, kicker: "result", title: "Draft PR", sub: "never merged", accent: "sand", strong: true }));
+  b.push(node(t, { x: 1030, y: 280, w: 140, kicker: "result", title: "Draft PR", sub: "merged once verified", accent: "sand", strong: true }));
   b.push(`<line x1="32" x2="${W - 32}" y1="398" y2="398" stroke="${t.line}"/>`);
   b.push(label(t, 32, 428, "Gate decisions, the lifecycle and the write guard are proved in Verus and diff-tested against the TypeScript the app runs.", "muted", "start", 12));
   return frame(t, W, H, b.join("\n"), "elevate pipeline: sources and repos, two gates, approval, swarm, draft PR");
@@ -157,7 +157,7 @@ function proof(t) {
   const W = 1200, H = 210;
   const b = [label(t, 32, 40, "PROOF-DRIVEN: EVERY RULE BETWEEN A HEADLINE AND YOUR REPO", "faint")];
   const steps = [
-    ["intent", "26 requirements", "plain words", null],
+    ["intent", "30 requirements", "plain words", null],
     ["spec + proof", "Verus", "for every input", "sky"],
     ["mutation", "1 bug per clause", "Verus must reject", "danger"],
     ["differential", "TS vs WASM", "every input class", "olive"],

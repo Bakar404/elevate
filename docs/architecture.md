@@ -42,7 +42,8 @@ Every table has a `tenant_id`, which is `local` for now.
 | `technique.legitimacy` | **Gate 1**: evidence prior (credibility, corroboration, HN signal, public code, cited links) plus a skeptical review, decided by `legitimacyDecision` | `technique.match` if passed |
 | `technique.match` / `repo.match` | Top-K repos by embedding, then the model judges fit and writes a concrete change hypothesis | `recommendation.soundness` |
 | `recommendation.soundness` | **Gate 2**: reads the touchpoint files, gets a review of fit, risk, impact and measurement, decided by `soundnessDecision` | `open` (inbox) or `gated_out` |
-| `swarm.run` | Plan the DAG, run it on the chosen executor through the guard, open a draft PR | `pr_opened` or `failed` |
+| `swarm.run` | Plan the DAG, run it on the chosen executor through the guard, open a draft PR | `pr_opened` and `prs.track`, or `failed` |
+| `prs.track` | Every 2 minutes (`ELEVATE_PR_MINUTES`), and right after a swarm opens its PR: read each swarm PR's state, checks and mergeability, store it on the swarm, and follow merges, closes and reopens made on GitHub. With auto-merge on, merge the PRs that are verified | `merged` or `closed` |
 
 ### Access: what the user can act on
 
@@ -81,6 +82,16 @@ When you approve, you choose an executor. Approval adds `approve` to the history
    - **Local** creates a git worktree on a `elevate/<id>` branch and runs `copilot`, `claude` or `codex` non-interactively, one task at a time in dependency order. It then commits, pushes and opens a draft PR.
    - **Fake** is used in the demo and tests. It walks the same DAG and writes through the same guard to a fake GitHub.
 3. Every write goes through `guardedGitHub`, which asks the proved `authorizeWrite` first and records the result in the audit log. Refusals throw `WriteRefused`.
+
+## Pull requests
+
+A swarm's job ends when its draft PR opens; `prs.track` (`packages/engine/src/prs.ts`) takes over from there. Each recommendation's latest succeeded swarm owns its PR, and older swarms' PRs are left alone.
+
+- **Following.** Each check reads the PR fresh: state, draft, head SHA, mergeability, and every check run and commit status on the head commit (`pullRequestStatus` in `packages/github`). The result is kept in `swarms.result.pr`. Merges, closes and reopens made on GitHub move the recommendation to `merged`, `closed` or back to `pr_opened` (T5, D8). PRs closed in the last week are still followed, in case they are reopened.
+- **Verified** (`prVerified`, M3) means at least one check passed, none failed, was cancelled or is still running, and GitHub reports the PR mergeable. A PR with no checks is never verified, so elevate never merges it.
+- **Merging** needs your consent (M2): a click on Merge (`POST /api/swarms/:id/pr`), or "Auto-merge verified PRs" in Settings (`swarm.autoMerge`; `ELEVATE_AUTO_MERGE=1` changes the default). The guard re-reads the PR, asks `authorizeWrite` for `merge_pr` with those counts, marks a draft ready for review, squash-merges pinned to the head SHA it checked, and deletes the swarm branch if it lives in the same repo and isn't the default branch. If GitHub refuses (say, a branch rule), the refusal is stored for that head commit and auto-merge doesn't retry it until the branch moves.
+- **Next step.** `prNextStep` turns what was seen into one stage with a title, the reason, and the actions that make sense: checking, waiting for workflow-run approval, checks failing, checks running, no checks, conflicts or behind, blocked by a branch rule, merge refused, auto-merging, ready to merge, merged, closed, swarms off for the repo, or superseded by a newer swarm. The swarm page, the recommendation page, the swarm and inbox lists and Home all show it.
+- **Closing** (Close on the swarm page) also needs your consent and keeps the branch. Re-verify sends a closed recommendation back through Gate 2 (T6).
 
 ## Model runtime
 

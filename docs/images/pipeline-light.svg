@@ -96,7 +96,7 @@
   <rect x="1042" y="294" width="6" height="6" rx="1.5" transform="rotate(45 1045 297)" fill="#a8731b"/>
   <text x="1056" y="301" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Inter, Helvetica, Arial, sans-serif" font-size="10" letter-spacing="0.08em" fill="#7c838e">RESULT</text>
   <text x="1044" y="321" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Inter, Helvetica, Arial, sans-serif" font-size="14" font-weight="600" fill="#1c222b">Draft PR</text>
-  <text x="1044" y="337" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Inter, Helvetica, Arial, sans-serif" font-size="11.5" fill="#535c68">never merged</text>
+  <text x="1044" y="337" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Inter, Helvetica, Arial, sans-serif" font-size="11.5" fill="#535c68">merged once verified</text>
 </g>
 <line x1="32" x2="1168" y1="398" y2="398" stroke="rgba(22,32,48,0.10)"/>
 <text x="32" y="428" text-anchor="start" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Inter, Helvetica, Arial, sans-serif" font-size="12" fill="#535c68">Gate decisions, the lifecycle and the write guard are proved in Verus and diff-tested against the TypeScript the app runs.</text>

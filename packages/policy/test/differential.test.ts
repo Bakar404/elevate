@@ -122,7 +122,7 @@ describe.skipIf(!existsSync(wasmPath))("D: packages/policy against the proved bu
     expect(c.s.mismatches, JSON.stringify(c.s.example)).toBe(0);
   });
 
-  it("Lifecycle: all 80 status and event pairs", () => {
+  it("Lifecycle: all 120 status and event pairs", () => {
     const c = section("transition");
     for (const [si, s] of STATUSES.entries())
       for (const [ei, e] of EVENTS.entries()) {
@@ -163,7 +163,7 @@ describe.skipIf(!existsSync(wasmPath))("D: packages/policy against the proved bu
     expect(c.s.mismatches, JSON.stringify(c.s.example)).toBe(0);
   });
 
-  it("Write guard: every action, status and flag, at the budget boundaries", () => {
+  it("Write guard: every action, status and flag, at the budget and check-count boundaries", () => {
     const c = section("authorize");
     const pairs: [number, number][] = [
       [0, 0],
@@ -172,40 +172,57 @@ describe.skipIf(!existsSync(wasmPath))("D: packages/policy against the proved bu
       [2, 1],
       [4, 5],
     ];
+    // [passed, blocking]: none, verified, only failing, mixed.
+    const checks: [number, number][] = [
+      [0, 0],
+      [1, 0],
+      [0, 1],
+      [2, 1],
+    ];
     for (const [ai, action] of ACTIONS.entries())
       for (const [si, status] of STATUSES.entries())
         for (const allow of B)
           for (const same of B)
             for (const draft of B)
-              for (const [tu, tm] of pairs)
-                for (const [mu, mm] of pairs)
-                  for (const [uu, um] of pairs) {
-                    const v = authorizeWrite({
-                      action,
-                      status,
-                      allowSwarm: allow === 1,
-                      sameRepo: same === 1,
-                      draft: draft === 1,
-                      usage: { tasks: tu, minutes: mu, agentTurns: uu },
-                      budget: { maxTasks: tm, maxMinutes: mm, maxAgentTurns: um },
-                    });
-                    c.check(VERDICTS.indexOf(v), w.authorize_code(ai, si, allow, same, draft, tu, tm, mu, mm, uu, um), () => ({
-                      action,
-                      status,
-                      allow,
-                      same,
-                      draft,
-                      budget: [tu, tm, mu, mm, uu, um],
-                    }));
-                  }
+              for (const consent of B)
+                for (const mergeable of B)
+                  for (const [cp, cb] of checks)
+                    for (const [tu, tm] of pairs)
+                      for (const [mu, mm] of pairs)
+                        for (const [uu, um] of pairs) {
+                          const v = authorizeWrite({
+                            action,
+                            status,
+                            allowSwarm: allow === 1,
+                            sameRepo: same === 1,
+                            draft: draft === 1,
+                            consent: consent === 1,
+                            checksPassed: cp,
+                            checksBlocking: cb,
+                            mergeable: mergeable === 1,
+                            usage: { tasks: tu, minutes: mu, agentTurns: uu },
+                            budget: { maxTasks: tm, maxMinutes: mm, maxAgentTurns: um },
+                          });
+                          c.check(VERDICTS.indexOf(v), w.authorize_code(ai, si, allow, same, draft, consent, cp, cb, mergeable, tu, tm, mu, mm, uu, um), () => ({
+                            action,
+                            status,
+                            allow,
+                            same,
+                            draft,
+                            consent,
+                            mergeable,
+                            checks: [cp, cb],
+                            budget: [tu, tm, mu, mm, uu, um],
+                          }));
+                        }
     expect(c.s.mismatches, JSON.stringify(c.s.example)).toBe(0);
   });
 
   it("coverage: every outcome occurs", () => {
     const by = Object.fromEntries(sections.map((s) => [s.name, s]));
     expect(Object.keys(by.authorize?.outcomes ?? {}).sort()).toEqual(VERDICTS.map((_, i) => String(i)).sort());
-    expect(Object.keys(by.transition?.outcomes ?? {}).length).toBe(STATUSES.length + 1); // all 8 statuses + none
-    expect(Object.keys(by.replay?.outcomes ?? {}).length).toBe(STATUSES.length + 1); // all 8 statuses + none
+    expect(Object.keys(by.transition?.outcomes ?? {}).length).toBe(STATUSES.length + 1); // all 10 statuses + none
+    expect(Object.keys(by.replay?.outcomes ?? {}).length).toBe(STATUSES.length + 1); // all 10 statuses + none
     if (process.env.PDD_RESULTS) {
       writeFileSync(process.env.PDD_RESULTS, `${JSON.stringify({ wasm: shownPath(wasmPath), sections }, null, "\t")}\n`);
     }

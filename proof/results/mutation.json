@@ -1,5 +1,5 @@
 {
-	"verus": "%TEMP%\\verus\\verus-arm64-win\\verus.exe",
+	"verus": "%TEMP%\\verus\\verus-x86-win\\verus.exe",
 	"baseline": {
 		"proved": true,
 		"summary": "verification results:: 12 verified, 0 errors"
@@ -162,6 +162,16 @@
 			"ok": true
 		},
 		{
+			"id": "MT2c",
+			"target": "T2",
+			"bug": "a closed PR comes back as open on a retry, though nothing reopened it",
+			"rejected": true,
+			"caughtBy": [
+				"T2"
+			],
+			"ok": true
+		},
+		{
 			"id": "MT3",
 			"target": "T3",
 			"bug": "a rejected recommendation reopens straight into the inbox",
@@ -185,7 +195,7 @@
 		{
 			"id": "MT5",
 			"target": "T5",
-			"bug": "an opened PR can be rejected and reopened",
+			"bug": "an open PR can be rejected while it is still open on GitHub",
 			"rejected": true,
 			"caughtBy": [
 				"T5"
@@ -203,12 +213,42 @@
 			"ok": true
 		},
 		{
+			"id": "MT6c",
+			"target": "T6",
+			"bug": "a recommendation whose PR was closed can't be reopened",
+			"rejected": true,
+			"caughtBy": [
+				"T6"
+			],
+			"ok": true
+		},
+		{
 			"id": "MT7",
 			"target": "T7",
 			"bug": "replay starts past the gates",
 			"rejected": true,
 			"caughtBy": [
 				"T7"
+			],
+			"ok": true
+		},
+		{
+			"id": "MT8",
+			"target": "T8",
+			"bug": "a running swarm is marked merged without a PR",
+			"rejected": true,
+			"caughtBy": [
+				"T8"
+			],
+			"ok": true
+		},
+		{
+			"id": "MT8r",
+			"target": "T8",
+			"bug": "a merged recommendation reopens, to run again on merged code",
+			"rejected": true,
+			"caughtBy": [
+				"T8"
 			],
 			"ok": true
 		},
@@ -284,6 +324,62 @@
 			"bug": "draft work is refused everywhere (over-strict)",
 			"rejected": true,
 			"caughtBy": [
+				"W7"
+			],
+			"ok": true
+		},
+		{
+			"id": "MM1",
+			"target": "M1",
+			"bug": "a PR is merged mid-run, before the swarm opened it",
+			"rejected": true,
+			"caughtBy": [
+				"M1",
+				"M3",
+				"W7"
+			],
+			"ok": true
+		},
+		{
+			"id": "MM2",
+			"target": "M2",
+			"bug": "the PR is merged or closed without your consent",
+			"rejected": true,
+			"caughtBy": [
+				"M2",
+				"W7"
+			],
+			"ok": true
+		},
+		{
+			"id": "MM3",
+			"target": "M3",
+			"bug": "a PR with failing or pending checks is merged",
+			"rejected": true,
+			"caughtBy": [
+				"M3",
+				"W7"
+			],
+			"ok": true
+		},
+		{
+			"id": "MM3z",
+			"target": "M3",
+			"bug": "a PR with no checks at all is merged",
+			"rejected": true,
+			"caughtBy": [
+				"M3",
+				"W7"
+			],
+			"ok": true
+		},
+		{
+			"id": "MM3c",
+			"target": "M3",
+			"bug": "a PR with merge conflicts is merged",
+			"rejected": true,
+			"caughtBy": [
+				"M3",
 				"W7"
 			],
 			"ok": true

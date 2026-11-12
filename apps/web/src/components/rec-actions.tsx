@@ -7,7 +7,7 @@ import { toast } from "sonner";
 import { EXECUTORS, cn, send } from "@/lib/utils";
 import { Button, Dialog, Switch } from "./ui";
 
-export function RecActions({ id, status, repo, allowSwarm, demo }: { id: string; status: string; repo: string; allowSwarm: boolean; demo: boolean }) {
+export function RecActions({ id, status, repo, allowSwarm, autoMerge, demo }: { id: string; status: string; repo: string; allowSwarm: boolean; autoMerge: boolean; demo: boolean }) {
   const router = useRouter();
   const [open, setOpen] = useState(false);
   const act = (action: string, label: string, data: unknown = {}) =>
@@ -38,12 +38,12 @@ export function RecActions({ id, status, repo, allowSwarm, demo }: { id: string;
           </Button>
         </>
       )}
-      {(status === "gated_out" || status === "rejected" || status === "open") && (
-        <Button variant="ghost" onClick={() => act("regate", "Re-verify")}>
+      {(status === "gated_out" || status === "rejected" || status === "open" || status === "closed") && (
+        <Button variant="ghost" onClick={() => act("regate", "Re-verify")} data-testid="reverify">
           <RotateCcw /> Re-verify
         </Button>
       )}
-      <ApproveDialog open={open} onOpenChange={setOpen} id={id} repo={repo} allowSwarm={allowSwarm} demo={demo} onDone={() => router.refresh()} />
+      <ApproveDialog open={open} onOpenChange={setOpen} id={id} repo={repo} allowSwarm={allowSwarm} autoMerge={autoMerge} demo={demo} onDone={() => router.refresh()} />
     </div>
   );
 }
@@ -54,6 +54,7 @@ function ApproveDialog({
   id,
   repo,
   allowSwarm,
+  autoMerge,
   demo,
   onDone,
 }: {
@@ -62,6 +63,7 @@ function ApproveDialog({
   id: string;
   repo: string;
   allowSwarm: boolean;
+  autoMerge: boolean;
   demo: boolean;
   onDone: () => void;
 }) {
@@ -85,7 +87,17 @@ function ApproveDialog({
   };
 
   return (
-    <Dialog open={open} onOpenChange={onOpenChange} title="Launch a swarm" description={<>Agents plan, implement, test and review the change, then open a <strong className="text-fg">draft</strong> PR on {repo}. Nothing is merged.</>}>
+    <Dialog
+      open={open}
+      onOpenChange={onOpenChange}
+      title="Launch a swarm"
+      description={
+        <>
+          Agents plan, implement, test and review the change, then open a <strong className="text-fg">draft</strong> PR on {repo}. It merges only once its
+          checks pass: {autoMerge ? "auto-merge is on, so elevate merges it then." : "you click Merge, or turn on auto-merge in Settings."}
+        </>
+      }
+    >
       <div className="grid gap-2" role="radiogroup" aria-label="Executor">
         {options.map((o) => (
           <button

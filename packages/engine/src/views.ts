@@ -1,23 +1,27 @@
-import { asc, auditLog, desc, eq, events, items, recommendations, repos, sources, sql, swarms, swarmTasks, techniques, threads, messages } from "@elevate/db";
+import { and, asc, auditLog, desc, eq, events, items, recommendations, repos, sources, sql, swarms, swarmTasks, techniques, threads, messages } from "@elevate/db";
 import { defaultSources, ECOSYSTEM_LABEL, sourceEcosystem } from "@elevate/sources";
 import { accessProfile, accessView, verdictFor } from "./access";
 import type { Ctx } from "./context";
 import { focusQueries } from "./ingest";
 
-/** Read models for the UI. Everything the pages show comes from here. */
+/**
+ * Read models for the UI. Everything the pages show comes from here. Repos the user turned off
+ * (watch = false) only appear on the Repos page, where they can be turned back on; their
+ * recommendations are kept and come back with them.
+ */
 
 export async function stats(ctx: Ctx) {
   const [row] = await ctx.db.execute<Record<string, number>>(sql`
     select
-      (select count(*)::int from repos) as repos,
-      (select count(*)::int from repos where allow_swarm) as "allowedRepos",
+      (select count(*)::int from repos where watch) as repos,
+      (select count(*)::int from repos where watch and allow_swarm) as "allowedRepos",
       (select count(*)::int from items) as items,
       (select count(*)::int from techniques) as techniques,
       (select count(*)::int from techniques where (legitimacy->>'passed')::boolean) as legit,
       (select count(*)::int from techniques where (legitimacy->>'passed')::boolean = false) as hype,
-      (select count(*)::int from recommendations where status = 'open') as open,
-      (select count(*)::int from recommendations where status = 'gated_out') as "gatedOut",
-      (select count(*)::int from recommendations where status = 'pr_opened') as prs,
+      (select count(*)::int from recommendations r join repos p on p.id = r.repo_id where p.watch and r.status = 'open') as open,
+      (select count(*)::int from recommendations r join repos p on p.id = r.repo_id where p.watch and r.status = 'gated_out') as "gatedOut",
+      (select count(*)::int from recommendations r join repos p on p.id = r.repo_id where p.watch and r.status = 'pr_opened') as prs,
       (select count(*)::int from swarms where status in ('queued','planning','running')) as "activeSwarms"
   `).then((r) => (Array.isArray(r) ? r : (r as { rows: Record<string, number>[] }).rows));
   // Open recommendations the user can no longer act on are shown as filtered, so don't count them as waiting.
@@ -25,8 +29,9 @@ export async function stats(ctx: Ctx) {
   const openRecs = await ctx.db
     .select({ name: techniques.name, summary: techniques.summary, claims: techniques.claims })
     .from(recommendations)
+    .innerJoin(repos, eq(recommendations.repoId, repos.id))
     .innerJoin(techniques, eq(recommendations.techniqueId, techniques.id))
-    .where(eq(recommendations.status, "open"));
+    .where(and(eq(recommendations.status, "open"), eq(repos.watch, true)));
   const blocked = openRecs.filter((t) => !verdictFor(t, access).usable).length;
   if (row) row.open = Math.max(0, (row.open ?? 0) - blocked);
   return row as {
@@ -70,7 +75,7 @@ export async function listRecommendations(ctx: Ctx, status?: string) {
     .from(recommendations)
     .innerJoin(repos, eq(recommendations.repoId, repos.id))
     .innerJoin(techniques, eq(recommendations.techniqueId, techniques.id))
-    .where(status ? eq(recommendations.status, status as never) : undefined)
+    .where(and(eq(repos.watch, true), status ? eq(recommendations.status, status as never) : undefined))
     .orderBy(desc(recommendations.score), desc(recommendations.createdAt))
     .limit(200);
   return rows.map(({ techniqueSummary, claims, ...r }) => ({
@@ -144,8 +149,9 @@ export type ActivityGraph = Awaited<ReturnType<typeof activityGraph>>;
 export async function activityGraph(ctx: Ctx, maxRepos = 12, maxTechniques = 8) {
   const [repoRows, recRows, swarmRows] = await Promise.all([
     ctx.db
-      .select({ id: repos.id, fullName: repos.fullName, language: repos.language, watch: repos.watch, allowSwarm: repos.allowSwarm, pushedAt: repos.pushedAt })
-      .from(repos),
+      .select({ id: repos.id, fullName: repos.fullName, language: repos.language, allowSwarm: repos.allowSwarm, pushedAt: repos.pushedAt })
+      .from(repos)
+      .where(eq(repos.watch, true)),
     ctx.db
       .select({ id: recommendations.id, repoId: recommendations.repoId, techniqueId: techniques.id, technique: techniques.name, category: techniques.category, status: recommendations.status, score: recommendations.score })
       .from(recommendations)
@@ -163,7 +169,6 @@ export async function activityGraph(ctx: Ctx, maxRepos = 12, maxTechniques = 8) 
       const state: GraphRepoState = working.has(r.id) ? "working" : open ? "review" : "watched";
       return { ...r, mine, open, prs: mine.filter((l) => l.status === "pr_opened").length, state };
     })
-    .filter((r) => r.watch || r.allowSwarm || r.mine.length)
     .sort(
       (a, b) =>
         Number(b.state === "working") - Number(a.state === "working") ||
@@ -212,7 +217,9 @@ export async function radar(ctx: Ctx) {
   const name = await repoNames(ctx);
   const recs = await ctx.db
     .select({ techniqueId: recommendations.techniqueId, status: recommendations.status })
-    .from(recommendations);
+    .from(recommendations)
+    .innerJoin(repos, eq(recommendations.repoId, repos.id))
+    .where(eq(repos.watch, true));
   const access = await accessProfile(ctx);
   return techs.map((t) => ({
     access: accessView(t, access),
@@ -232,8 +239,9 @@ export async function radar(ctx: Ctx) {
   }));
 }
 
+/** Names of watched repos by id; a turned-off repo resolves to undefined so it isn't shown. */
 async function repoNames(ctx: Ctx) {
-  const rows = await ctx.db.select({ id: repos.id, fullName: repos.fullName }).from(repos);
+  const rows = await ctx.db.select({ id: repos.id, fullName: repos.fullName }).from(repos).where(eq(repos.watch, true));
   const m = new Map(rows.map((r) => [r.id, r.fullName]));
   return (id: string) => m.get(id);
 }
@@ -275,8 +283,8 @@ export async function discoveryFeed(ctx: Ctx, opts: { limit?: number; repoOnly?:
       ),
     )
     .orderBy(desc(items.createdAt), desc(items.publishedAt))
-    // Over-fetch when filtering, since items the user can't act on are dropped below.
-    .limit(opts.hideHype ? limit * 3 : limit);
+    // Over-fetch when filtering, since items the user can't act on (or found only for turned-off repos) are dropped below.
+    .limit(opts.hideHype || opts.repoOnly ? limit * 3 : limit);
   const name = await repoNames(ctx);
   const access = await accessProfile(ctx);
   return rows
@@ -286,6 +294,7 @@ export async function discoveryFeed(ctx: Ctx, opts: { limit?: number; repoOnly?:
       blocked: r.technique ? accessView({ name: r.technique, summary: techniqueSummary ?? "", claims }, access).reason : null,
     }))
     .filter((r) => !opts.hideHype || !r.blocked)
+    .filter((r) => !opts.repoOnly || (r.signals.focus?.repoIds ?? []).some((id) => name(id)))
     .slice(0, limit)
     .map(({ signals, ...r }) => ({
     ...r,

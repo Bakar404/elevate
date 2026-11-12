@@ -1,5 +1,5 @@
 import { HashingEmbedder } from "@elevate/agent";
-import { auditLog, createDb, eq, recommendations, repos, swarms, swarmTasks, techniques } from "@elevate/db";
+import { auditLog, createDb, enqueue, eq, recommendations, repos, swarms, swarmTasks, techniques } from "@elevate/db";
 import { FakeGitHub } from "@elevate/executors";
 import { replay } from "@elevate/policy";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
@@ -144,6 +144,47 @@ describe("read models and chat", () => {
     expect((await listRecommendations(ctx, "open")).every((r) => r.status === "open")).toBe(true);
     const hype = (await radar(ctx)).find((t) => /weight-space/i.test(t.name));
     expect(hype?.items[0]?.source).toBe("Growth Hacks Weekly");
+  });
+
+  it("a repo turned off leaves the map, the inbox and the counts, and comes back when turned on", async () => {
+    const before = await stats(ctx);
+    const { rec, repo } = (await recs())[0]!;
+    const setWatch = (watch: boolean) => ctx.db.update(repos).set({ watch }).where(eq(repos.id, rec.repoId));
+    await setWatch(false);
+    try {
+      const s = await stats(ctx);
+      const shown = await listRecommendations(ctx);
+      expect(s.repos).toBe(before.repos - 1);
+      expect(shown.some((r) => r.repoId === rec.repoId)).toBe(false);
+      expect(s.prs).toBe(shown.filter((r) => r.status === "pr_opened").length);
+      expect(s.gatedOut).toBe(shown.filter((r) => r.status === "gated_out").length);
+      const graph = await activityGraph(ctx);
+      expect(graph.repos.some((r) => r.id === rec.repoId)).toBe(false);
+      expect(graph.links.some((l) => l.repoId === rec.repoId)).toBe(false);
+      expect((await radar(ctx)).some((t) => t.foundFor.includes(repo))).toBe(false);
+    } finally {
+      await setWatch(true);
+    }
+    expect(await stats(ctx)).toEqual(before);
+    expect((await activityGraph(ctx)).repos.some((r) => r.id === rec.repoId)).toBe(true);
+  });
+
+  it("Gate 2 waits while a repo is off", async () => {
+    const [r] = (await recs()).filter((x) => x.rec.status === "open");
+    expect(r, "demo should leave an open recommendation").toBeDefined();
+    if (!r) return;
+    const setWatch = (watch: boolean) => ctx.db.update(repos).set({ watch }).where(eq(repos.id, r.rec.repoId));
+    await setWatch(false);
+    try {
+      await regateRecommendation(ctx, r.rec.id);
+      await drain(ctx);
+      expect((await recById(r.rec.id)).status).toBe("candidate");
+    } finally {
+      await setWatch(true);
+    }
+    await enqueue(ctx.db, "recommendation.soundness", { recommendationId: r.rec.id });
+    await drain(ctx);
+    expect((await recById(r.rec.id)).history.slice(-2)).toEqual(["regate", "gate_pass"]);
   });
 
   it("the filtered discovery feed never surfaces hype or irrelevant items; the full feed keeps them", async () => {

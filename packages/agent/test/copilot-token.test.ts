@@ -19,7 +19,18 @@ describe("resolveCopilotToken", () => {
     expect(await resolveCopilotToken({}, gh(tokens))).toBe("other");
   });
 
-  it("returns undefined when gh has no token", async () => {
-    expect(await resolveCopilotToken({ GITHUB_USER: "nobody" }, gh({}))).toBeUndefined();
+  it("uses the account pinned in Settings, unless GITHUB_USER names another", async () => {
+    const tokens = { Bakar404: "personal", work: "work", "(active)": "other" };
+    expect(await resolveCopilotToken({}, gh(tokens), "Bakar404")).toBe("personal");
+    expect(await resolveCopilotToken({ GITHUB_USER: "work" }, gh(tokens), "Bakar404")).toBe("work");
+  });
+
+  it("refuses to bill another account when the chosen one has no gh login", async () => {
+    await expect(resolveCopilotToken({ GITHUB_USER: "nobody" }, gh({ "(active)": "other" }))).rejects.toThrow(/nobody/);
+    await expect(resolveCopilotToken({}, gh({ "(active)": "other" }), "nobody")).rejects.toThrow(/nobody/);
+  });
+
+  it("returns undefined when no account was chosen and gh has no token", async () => {
+    expect(await resolveCopilotToken({}, gh({}))).toBeUndefined();
   });
 });

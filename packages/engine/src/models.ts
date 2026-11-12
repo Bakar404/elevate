@@ -17,9 +17,10 @@ export const DEMO_MODELS: ModelOption[] = [
 
 const CACHE_MS = 10 * 60_000;
 const ERROR_CACHE_MS = 60_000;
-let cache: { at: number; models: ModelOption[] } | undefined;
+/** Per account: the list depends on whose Copilot seat it is. */
+let cache: { at: number; account: string; models: ModelOption[] } | undefined;
 /** A failed listing is remembered briefly so every page load doesn't restart the Copilot runtime. */
-let failed: { at: number; error: string } | undefined;
+let failed: { at: number; account: string; error: string } | undefined;
 
 /**
  * Models the user can pick. With Copilot as the provider this is the seat's live model list;
@@ -28,19 +29,20 @@ let failed: { at: number; error: string } | undefined;
  */
 export async function availableModels(ctx: Ctx): Promise<{ provider: ModelConfig["provider"]; models: ModelOption[]; error?: string }> {
   if (ctx.demo) return { provider: "copilot", models: DEMO_MODELS };
-  const { provider } = await resolveModelConfig(ctx.db);
+  const { provider, account = "" } = await resolveModelConfig(ctx.db);
   if (provider !== "copilot") return { provider, models: [] };
-  if (cache && Date.now() - cache.at < CACHE_MS) return { provider, models: cache.models };
-  if (failed && Date.now() - failed.at < ERROR_CACHE_MS) return { provider, models: cache?.models ?? [], error: failed.error };
+  const last = cache?.account === account ? cache.models : [];
+  if (cache?.account === account && Date.now() - cache.at < CACHE_MS) return { provider, models: last };
+  if (failed?.account === account && Date.now() - failed.at < ERROR_CACHE_MS) return { provider, models: last, error: failed.error };
   try {
-    const models = await listCopilotModels();
-    cache = { at: Date.now(), models };
+    const models = await listCopilotModels(account || undefined);
+    cache = { at: Date.now(), account, models };
     failed = undefined;
     return { provider, models };
   } catch (err) {
-    failed = { at: Date.now(), error: err instanceof Error ? err.message : String(err) };
+    failed = { at: Date.now(), account, error: err instanceof Error ? err.message : String(err) };
     // Keep showing the last good list rather than an empty picker.
-    return { provider, models: cache?.models ?? [], error: failed.error };
+    return { provider, models: last, error: failed.error };
   }
 }
 

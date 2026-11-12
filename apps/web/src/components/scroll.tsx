@@ -1,8 +1,9 @@
 "use client";
 
 import { ArrowUp } from "lucide-react";
-import { motion, useReducedMotion, useScroll, useSpring } from "motion/react";
+import { motion, useScroll, useSpring } from "motion/react";
 import { useEffect, useState, type ReactNode } from "react";
+import { usePrefersReducedMotion } from "@/lib/motion";
 import { cn } from "@/lib/utils";
 
 /** Thin bar along the top of the page that fills as you scroll. */
@@ -21,7 +22,7 @@ export function ScrollProgress() {
 
 /** Fades a section in the first time it scrolls into view. */
 export function Reveal({ children, className, delay = 0 }: { children: ReactNode; className?: string; delay?: number }) {
-  const reduce = useReducedMotion();
+  const reduce = usePrefersReducedMotion();
   if (reduce) return <div className={className}>{children}</div>;
   return (
     <motion.div

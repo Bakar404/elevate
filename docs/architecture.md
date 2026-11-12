@@ -33,9 +33,9 @@ Every table has a `tenant_id`, which is `local` for now.
 
 | Job | Does | Then |
 |---|---|---|
-| `repos.sync` | List your repos (every 5 minutes; `ELEVATE_SYNC_MINUTES`). For repos whose `pushed_at` moved, read the default-branch head SHA | `repo.profile` for watched repos whose head differs from the profiled commit |
+| `repos.sync` | List your repos (every 2 minutes; `ELEVATE_SYNC_MINUTES`). For repos whose `pushed_at` moved, read the default-branch head SHA | `repo.profile` for watched repos whose head differs from the profiled commit |
 | `repo.profile` | Read the README, manifests and tree at the head commit; model writes the profile; embed it; store `profiled_sha` | `repo.match` |
-| `sources.sweep` | Every hour, fan out to each enabled source | `source.fetch` |
+| `sources.sweep` | Every 15 minutes (`ELEVATE_SWEEP_MINUTES`), fan out to each enabled source | `source.fetch` |
 | `sources.sweep` (cont.) | Feeds about a product the user doesn't have are skipped | |
 | `source.fetch` | Fetch and dedupe items; drop ones published more than `ELEVATE_MAX_ITEM_AGE_DAYS` ago | `items.triage` |
 | `items.triage` | Model keeps engineering-relevant items and extracts techniques, tagging each with the AI products it requires and the model versions it is about; near-duplicates (cosine ≥ 0.82) merge | `technique.legitimacy`, unless the user can't act on it |

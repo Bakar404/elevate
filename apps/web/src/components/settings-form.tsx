@@ -11,7 +11,9 @@ type Settings = {
   demo: boolean;
   model: { provider: string; model: string; baseUrl: string; hasApiKey: boolean };
   models: { pipeline: string; chat: string; codingAgent: string };
-  github: { connected: boolean; login: string | null; source: string; error?: string };
+  github: { connected: boolean; login: string | null; source: string; error?: string; account: string | null; accountFrom: "env" | "pinned" | null };
+  /** Who the Copilot runtime is signed in as; null when the provider isn't Copilot. */
+  copilot: { login: string | null; error?: string } | null;
   executor: string;
   thresholds: { legitimacy: number; priorFloor: number; soundness: number };
   budget: { maxTasks: number; maxMinutes: number; maxAgentTurns: number };
@@ -224,6 +226,41 @@ export function SettingsForm() {
           <span className="font-mono"> gh </span>CLI login or <span className="font-mono">GITHUB_TOKEN</span> unless you store a token here.
         </p>
         {!s.github.connected && s.github.error && <p className="mt-2 text-xs text-danger">{s.github.error}</p>}
+        {!s.demo && (
+          <div className="mt-3 flex flex-wrap items-center gap-2 text-sm" data-testid="github-account">
+            {s.copilot &&
+              (s.copilot.login ? (
+                <span className="text-muted">
+                  Copilot usage goes to <span className="font-medium">{s.copilot.login}</span>.
+                </span>
+              ) : (
+                <span className="text-xs text-danger">{s.copilot.error ?? "Copilot isn't signed in."}</span>
+              ))}
+            {s.github.accountFrom === "env" ? (
+              <span className="text-xs text-faint">Held to {s.github.account} by GITHUB_USER.</span>
+            ) : s.github.accountFrom === "pinned" ? (
+              <>
+                <Badge tone="olive">pinned to {s.github.account}</Badge>
+                <Button size="sm" variant="ghost" className="h-8" onClick={() => save({ githubAccount: null }, "Unpinned")}>
+                  Unpin
+                </Button>
+              </>
+            ) : (
+              s.github.source === "gh" &&
+              s.github.login && (
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  className="h-8"
+                  title="Keeps GitHub calls and Copilot usage on this account, even after `gh auth switch`."
+                  onClick={() => save({ githubAccount: s.github.login }, `Pinned to ${s.github.login}`)}
+                >
+                  Pin to {s.github.login}
+                </Button>
+              )
+            )}
+          </div>
+        )}
         {!s.demo && (
           <div className="mt-4 flex gap-2">
             <div className="relative flex-1">

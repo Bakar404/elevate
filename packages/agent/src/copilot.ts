@@ -14,6 +14,8 @@ export type ModelConfig = {
   model?: string;
   baseUrl?: string;
   apiKey?: string;
+  /** gh account whose Copilot seat pays (the one pinned in Settings); GITHUB_USER takes precedence. */
+  account?: string;
 };
 
 export function modelConfigFromEnv(): ModelConfig {
@@ -28,21 +30,27 @@ export function modelConfigFromEnv(): ModelConfig {
 
 /**
  * Token whose Copilot seat pays for model calls: COPILOT_GITHUB_TOKEN -> GITHUB_TOKEN ->
- * `gh auth token [--user GITHUB_USER]`. Copilot usage then bills the same account that owns
- * the repos, not whichever account happens to be logged in to the Copilot CLI. Returns
- * undefined only when none is available, which falls back to that logged-in user.
+ * `gh auth token --user <GITHUB_USER, else the pinned account>`. Copilot usage then bills the
+ * same account that owns the repos, not whichever account happens to be logged in to the
+ * Copilot CLI. When an account was chosen but gh has no token for it, this throws rather than
+ * billing someone else. With no account chosen it uses gh's active account, and returns
+ * undefined (the logged-in Copilot CLI user) only when gh has none.
  */
 export async function resolveCopilotToken(
   env: NodeJS.ProcessEnv = process.env,
   ghToken: (user?: string) => Promise<string> = ghAuthToken,
+  account?: string,
 ): Promise<string | undefined> {
   if (env.COPILOT_GITHUB_TOKEN) return env.COPILOT_GITHUB_TOKEN;
   if (env.GITHUB_TOKEN) return env.GITHUB_TOKEN;
-  try {
-    return (await ghToken(env.GITHUB_USER || undefined)).trim() || undefined;
-  } catch {
-    return undefined;
-  }
+  const user = env.GITHUB_USER || account || undefined;
+  const token = await ghToken(user).then(
+    (t) => t.trim(),
+    () => "",
+  );
+  if (token) return token;
+  if (user) throw new Error(`No gh login for ${user}: run \`gh auth login\` as ${user} so Copilot usage goes to that account.`);
+  return undefined;
 }
 
 async function ghAuthToken(user?: string): Promise<string> {
@@ -52,27 +60,35 @@ async function ghAuthToken(user?: string): Promise<string> {
   return stdout;
 }
 
-const CLIENT_KEY = Symbol.for("elevate.copilot");
-type G = typeof globalThis & { [CLIENT_KEY]?: Promise<CopilotClient> };
+const CLIENT_KEY = Symbol.for("elevate.copilot.runtime");
+type Runtime = { account: string; client: Promise<CopilotClient> };
+type G = typeof globalThis & { [CLIENT_KEY]?: Runtime };
 
-/** One Copilot runtime per process; sessions are cheap, runtimes are not. */
-export function getCopilotClient(): Promise<CopilotClient> {
+/**
+ * One Copilot runtime per process; sessions are cheap, runtimes are not. The runtime is signed
+ * in as one account (see `resolveCopilotToken`) and is replaced when that account changes.
+ */
+export function getCopilotClient(account?: string): Promise<CopilotClient> {
   const g = globalThis as G;
-  if (!g[CLIENT_KEY]) {
-    g[CLIENT_KEY] = (async () => {
-      const token = await resolveCopilotToken();
-      const client = new CopilotClient({
-        ...(token ? { gitHubToken: token } : {}),
-        logLevel: "error",
-      });
-      await client.start();
-      return client;
-    })().catch((err) => {
-      delete g[CLIENT_KEY];
-      throw err;
+  const key = process.env.GITHUB_USER || account || "";
+  const current = g[CLIENT_KEY];
+  if (current?.account === key) return current.client;
+  if (current) void current.client.then((c) => c.stop()).catch(() => {});
+  const client = (async () => {
+    const token = await resolveCopilotToken(process.env, ghAuthToken, account);
+    const c = new CopilotClient({
+      ...(token ? { gitHubToken: token } : {}),
+      logLevel: "error",
     });
-  }
-  return g[CLIENT_KEY];
+    await c.start();
+    return c;
+  })();
+  const runtime: Runtime = { account: key, client };
+  g[CLIENT_KEY] = runtime;
+  client.catch(() => {
+    if (g[CLIENT_KEY] === runtime) delete g[CLIENT_KEY];
+  });
+  return client;
 }
 
 export type ModelOption = {
@@ -103,15 +119,22 @@ export function sortModels(models: ModelOption[]): ModelOption[] {
 }
 
 /** Models the signed-in Copilot seat can use. */
-export async function listCopilotModels(): Promise<ModelOption[]> {
-  const client = await getCopilotClient();
+export async function listCopilotModels(account?: string): Promise<ModelOption[]> {
+  const client = await getCopilotClient(account);
   return sortModels((await client.listModels()).map((m) => toModelOption(m as RawModel)));
 }
+
+/** The GitHub login the Copilot runtime is signed in as, i.e. whose Copilot usage model calls count against. */
+export async function copilotLogin(account?: string): Promise<string | undefined> {
+  const status = await (await getCopilotClient(account)).getAuthStatus();
+  return status.isAuthenticated ? status.login : undefined;
+}
+
 export async function stopCopilotClient() {
   const g = globalThis as G;
-  const pending = g[CLIENT_KEY];
+  const current = g[CLIENT_KEY];
   delete g[CLIENT_KEY];
-  if (pending) await (await pending).stop().catch(() => []);
+  if (current) await current.client.then((c) => c.stop()).catch(() => []);
 }
 
 export type ToolSpec<S extends z.ZodType = z.ZodType> = {
@@ -138,7 +161,7 @@ export type SessionOptions = {
 };
 
 export async function createSession(opts: SessionOptions): Promise<CopilotSession> {
-  const client = await getCopilotClient();
+  const client = await getCopilotClient(opts.config.account);
   const { config } = opts;
   const provider =
     config.provider !== "copilot" && config.baseUrl

@@ -53,9 +53,9 @@ export async function runJob(ctx: Ctx, job: ClaimedJob) {
 
 const minutes = (env: string | undefined, fallback: number) => Number(env ?? fallback) * 60_000;
 const SCHEDULE = [
-  { job: "sources.sweep", every: minutes(process.env.ELEVATE_SWEEP_MINUTES, 60), needsGitHub: false },
+  { job: "sources.sweep", every: minutes(process.env.ELEVATE_SWEEP_MINUTES, 15), needsGitHub: false },
   // Cheap: one list call, plus a branch lookup only for repos that were pushed to.
-  { job: "repos.sync", every: minutes(process.env.ELEVATE_SYNC_MINUTES, 5), needsGitHub: true },
+  { job: "repos.sync", every: minutes(process.env.ELEVATE_SYNC_MINUTES, 2), needsGitHub: true },
 ];
 
 /** Enqueue recurring jobs that are due. Cheap to call often; state lives in settings so restarts don't re-run everything. */

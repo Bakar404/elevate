@@ -108,7 +108,8 @@ export function chatTools(ctx: Ctx): ToolSpec[] {
           .select({ id: recommendations.id, title: recommendations.title, status: recommendations.status, score: recommendations.score, repo: repos.fullName })
           .from(recommendations)
           .innerJoin(repos, eq(recommendations.repoId, repos.id))
-          .where(status ? eq(recommendations.status, status) : undefined)
+          // Same as the inbox: repos the user turned off are left out.
+          .where(and(eq(repos.watch, true), status ? eq(recommendations.status, status) : undefined))
           .orderBy(desc(recommendations.score))
           .limit(30);
         return rows;

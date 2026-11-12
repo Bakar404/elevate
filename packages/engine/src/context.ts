@@ -1,7 +1,7 @@
 import { CopilotLLM, defaultEmbedder, modelConfigFromEnv, type Embedder, type JsonRequest, type LLM, type ModelConfig } from "@elevate/agent";
 import { getDb, getSecret, getSetting, type DB } from "@elevate/db";
 import { FakeGitHub, octokitWriter, type GitHubWriter } from "@elevate/executors";
-import { getOctokit, resolveGitHubToken, type Octokit } from "@elevate/github";
+import { getOctokit, githubAccount, resolveGitHubToken, type Octokit } from "@elevate/github";
 import type { Fetcher } from "@elevate/sources";
 import { demoLLM } from "./fake";
 
@@ -26,7 +26,7 @@ export async function resolveModelConfig(db: DB): Promise<ModelConfig> {
   const saved = await getSetting<Partial<ModelConfig>>(db, "model", {});
   const provider = saved.provider ?? env.provider;
   const apiKey = provider === "copilot" ? undefined : ((await getSecret(db, "provider_api_key")) ?? env.apiKey);
-  return { provider, model: saved.model || env.model, baseUrl: saved.baseUrl || env.baseUrl, apiKey };
+  return { provider, model: saved.model || env.model, baseUrl: saved.baseUrl || env.baseUrl, apiKey, account: await githubAccount(db) };
 }
 
 /** Reads the model config per call so Settings changes apply without restarting the worker. */

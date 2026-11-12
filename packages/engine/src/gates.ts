@@ -170,6 +170,8 @@ export async function soundnessGate(ctx: Ctx, recommendationId: string): Promise
   if (!row) throw new Error(`Recommendation ${recommendationId} not found`);
   const { rec, repo, tech } = row;
   if (rec.status !== "candidate") return rec.gate2 ?? { passed: false, score: 0, verdict: "Not a candidate", reasons: [], evidence: [], checkedAt: new Date().toISOString() };
+  // The repo was turned off: leave it a candidate (no model call). Turning the repo back on re-queues this check.
+  if (!repo.watch) return { passed: false, score: 0, verdict: "Skipped: the repo is turned off", reasons: [], evidence: [], checkedAt: new Date().toISOString() };
 
   const files = (
     await Promise.all(rec.hypothesis.touchpoints.slice(0, 4).map(async (p) => ({ path: p, content: await readRepoFileSafe(ctx, repo.fullName, p) })))

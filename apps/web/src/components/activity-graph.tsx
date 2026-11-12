@@ -1,10 +1,11 @@
 "use client";
 
 import type { ActivityGraph as Graph } from "@elevate/engine";
-import { motion, useReducedMotion } from "motion/react";
+import { motion } from "motion/react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useMemo, useState } from "react";
+import { usePrefersReducedMotion } from "@/lib/motion";
 import type { LogoVariant } from "@/lib/prefs";
 import { cn } from "@/lib/utils";
 import { LogoMark } from "./logo";
@@ -26,7 +27,9 @@ const LINK_STYLE: Record<string, { color: string; dash?: string; speed?: number;
 };
 
 type Pos = { x: number; y: number; a: number };
-const onEllipse = (a: number, e: { rx: number; ry: number }): Pos => ({ x: CX + Math.cos(a) * e.rx, y: CY + Math.sin(a) * e.ry, a });
+/** Node's and the browser's Math.sin/cos can differ in the last digit; rounding keeps server and client markup identical. */
+const round = (v: number) => Math.round(v * 100) / 100;
+const onEllipse = (a: number, e: { rx: number; ry: number }): Pos => ({ x: round(CX + Math.cos(a) * e.rx), y: round(CY + Math.sin(a) * e.ry), a });
 const short = (s: string, n: number) => (s.length > n ? `${s.slice(0, n - 1)}…` : s);
 const clamp = (v: number, lo: number, hi: number) => Math.min(hi, Math.max(lo, v));
 
@@ -87,7 +90,7 @@ function Particle({ d, color, dur, begin, r = 2.2 }: { d: string; color: string;
 }
 
 export function ActivityGraph({ data, logo }: { data: Graph; logo?: LogoVariant }) {
-  const reduce = useReducedMotion();
+  const reduce = usePrefersReducedMotion();
   const router = useRouter();
   const [hover, setHover] = useState<string | null>(null);
   const { repoPos, techPos } = useMemo(() => layout(data), [data]);
@@ -138,7 +141,8 @@ export function ActivityGraph({ data, logo }: { data: Graph; logo?: LogoVariant 
           </div>
         </div>
       ) : (
-        <svg viewBox={`0 0 ${W} ${H}`} className="block h-auto w-full select-none" onMouseLeave={() => setHover(null)}>
+        // Keyed so that if reduced motion only turns on after hydration, the graph remounts still instead of animating in.
+        <svg key={reduce ? "still" : "live"} viewBox={`0 0 ${W} ${H}`} className="block h-auto w-full select-none" onMouseLeave={() => setHover(null)}>
           <defs>
             <pattern id="graph-dots" width="18" height="18" patternUnits="userSpaceOnUse">
               <circle cx="1" cy="1" r="0.8" fill="var(--color-ink)" opacity="0.07" />
@@ -242,8 +246,8 @@ export function ActivityGraph({ data, logo }: { data: Graph; logo?: LogoVariant 
             const color = STATE_COLOR[r.state];
             const c = Math.cos(p.a);
             const anchor = c > 0.35 ? "start" : c < -0.35 ? "end" : "middle";
-            const lx = p.x + c * 14;
-            const ly = p.y + Math.sin(p.a) * 16 + 4;
+            const lx = round(p.x + c * 14);
+            const ly = round(p.y + Math.sin(p.a) * 16 + 4);
             return (
               <g key={r.id} style={{ opacity: dim(r.id), transition: "opacity 200ms" }}>
               <motion.g

@@ -1,25 +1,43 @@
+import { copilotLogin } from "@elevate/agent";
 import { deleteSecret, getSecret, getSetting, setSecret, setSetting, audit } from "@elevate/db";
 import { accessProfile, DEFAULT_BUDGET, ECOSYSTEMS, ECOSYSTEM_LABEL, modelPrefs, recheckAccess, setAccessOverrides, publishAsMe, resetGitHubClient, resolveModelConfig, setModelPrefs, swarmBudget, thresholds } from "@elevate/engine";
-import { resolveGitHubToken } from "@elevate/github";
+import { ghAccountToken, GITHUB_ACCOUNT_SETTING, resolveGitHubToken } from "@elevate/github";
+import { NextResponse } from "next/server";
 import { z } from "zod";
 import { body, route } from "@/lib/api";
 
 export const dynamic = "force-dynamic";
 
-async function githubStatus(ctx: Parameters<Parameters<typeof route>[0]>[0]) {
-  if (ctx.demo) return { connected: true, login: "demo", source: "demo" as const };
+type RouteCtx = Parameters<Parameters<typeof route>[0]>[0];
+
+async function githubStatus(ctx: RouteCtx) {
+  if (ctx.demo) return { connected: true, login: "demo", source: "demo" as const, account: null, accountFrom: null };
   const stored = Boolean(await getSecret(ctx.db, "github_token"));
+  // The gh account elevate is held to: GITHUB_USER, else the one pinned here. Otherwise gh's active account.
+  const pinned = (await getSetting<string>(ctx.db, GITHUB_ACCOUNT_SETTING, "")) || null;
+  const account = process.env.GITHUB_USER || pinned;
+  const accountFrom = process.env.GITHUB_USER ? ("env" as const) : pinned ? ("pinned" as const) : null;
   try {
     const gh = await ctx.github();
     const { data } = await gh.users.getAuthenticated();
-    return { connected: true, login: data.login, source: stored ? ("stored" as const) : process.env.GITHUB_TOKEN ? ("env" as const) : ("gh" as const) };
+    return { connected: true, login: data.login, source: stored ? ("stored" as const) : process.env.GITHUB_TOKEN ? ("env" as const) : ("gh" as const), account, accountFrom };
   } catch (err) {
     const hasToken = await resolveGitHubToken(ctx.db).then(() => true, () => false);
-    return { connected: false, login: null, source: hasToken ? ("invalid" as const) : ("none" as const), error: err instanceof Error ? err.message : String(err) };
+    return { connected: false, login: null, source: hasToken ? ("invalid" as const) : ("none" as const), error: err instanceof Error ? err.message : String(err), account, accountFrom };
   }
 }
 
-async function accessStatus(ctx: Parameters<Parameters<typeof route>[0]>[0]) {
+/** Whose Copilot usage the model calls count against, as the Copilot runtime reports it. */
+async function copilotStatus(ctx: RouteCtx, model: Awaited<ReturnType<typeof resolveModelConfig>>) {
+  if (ctx.demo || model.provider !== "copilot") return null;
+  try {
+    return { login: (await copilotLogin(model.account)) ?? null };
+  } catch (err) {
+    return { login: null, error: err instanceof Error ? err.message : String(err) };
+  }
+}
+
+async function accessStatus(ctx: RouteCtx) {
   const a = await accessProfile(ctx);
   return {
     provider: a.provider,
@@ -44,6 +62,7 @@ export const GET = route(async (ctx) => {
     model: { provider: model.provider, model: model.model ?? "", baseUrl: model.baseUrl ?? "", hasApiKey: Boolean(model.apiKey) },
     models: await modelPrefs(ctx),
     github: await githubStatus(ctx),
+    copilot: await copilotStatus(ctx, model),
     executor: await getSetting(ctx.db, "executor.default", ctx.demo ? "fake" : "copilot-cloud"),
     thresholds: await thresholds(ctx),
     budget: await swarmBudget(ctx),
@@ -57,6 +76,12 @@ const Put = z.object({
   models: z.object({ pipeline: z.string().max(100), chat: z.string().max(100), codingAgent: z.string().max(100) }).partial().optional(),
   apiKey: z.string().max(500).nullable().optional(),
   githubToken: z.string().max(500).nullable().optional(),
+  /** gh account to hold GitHub calls and Copilot usage to; null goes back to gh's active account. */
+  githubAccount: z
+    .string()
+    .regex(/^[A-Za-z0-9][A-Za-z0-9-]{0,38}$/, "not a GitHub username")
+    .nullable()
+    .optional(),
   executor: z.enum(["copilot-cloud", "claude-action", "codex-cloud", "local", "fake"]).optional(),
   thresholds: z.object({ legitimacy: z.number().int().min(0).max(100), priorFloor: z.number().int().min(0).max(100), soundness: z.number().int().min(0).max(100) }).partial().optional(),
   budget: z.object({ maxTasks: z.number().int().min(1).max(20), maxMinutes: z.number().int().min(5).max(600), maxAgentTurns: z.number().int().min(1).max(200) }).partial().optional(),
@@ -67,11 +92,19 @@ const Put = z.object({
 
 export const PUT = route(async (ctx, req) => {
   const p = Put.parse(await body(req));
+  if (p.githubAccount && !(await ghAccountToken(p.githubAccount))) {
+    return NextResponse.json({ error: `gh has no login for ${p.githubAccount}. Run \`gh auth login\` as ${p.githubAccount} first.` }, { status: 400 });
+  }
   if (p.model) await setSetting(ctx.db, "model", { ...(await getSetting(ctx.db, "model", {})), ...p.model });
   if (p.models) await setModelPrefs(ctx, p.models);
   if (p.apiKey !== undefined) await (p.apiKey ? setSecret(ctx.db, "provider_api_key", p.apiKey) : deleteSecret(ctx.db, "provider_api_key"));
   if (p.githubToken !== undefined) {
     await (p.githubToken ? setSecret(ctx.db, "github_token", p.githubToken) : deleteSecret(ctx.db, "github_token"));
+    resetGitHubClient();
+  }
+  if (p.githubAccount !== undefined) {
+    // The Copilot runtime and chat sessions follow the account on their next use.
+    await setSetting(ctx.db, GITHUB_ACCOUNT_SETTING, p.githubAccount ?? "");
     resetGitHubClient();
   }
   if (p.executor) await setSetting(ctx.db, "executor.default", p.executor);

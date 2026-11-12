@@ -10,7 +10,7 @@ export type ChatEvent =
   | { type: "done" };
 
 type ChatEntry = { session: CopilotSession; lastUsed: number; busy: boolean; configKey: string };
-const configKey = (c: ModelConfig) => `${c.provider}|${c.model ?? ""}|${c.baseUrl ?? ""}`;
+const configKey = (c: ModelConfig) => `${c.provider}|${c.model ?? ""}|${c.baseUrl ?? ""}|${c.account ?? ""}`;
 const KEY = Symbol.for("elevate.chat");
 type G = typeof globalThis & { [KEY]?: Map<string, ChatEntry> };
 

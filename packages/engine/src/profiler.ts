@@ -88,6 +88,8 @@ export function profileToText(fullName: string, p: RepoProfile, description?: st
 export async function profileRepo(ctx: Ctx, repoId: string) {
   const [repo] = await ctx.db.select().from(repos).where(eq(repos.id, repoId));
   if (!repo) throw new Error(`Repo ${repoId} not found`);
+  // Turned off after this was queued: don't spend a model call on it. Turning it back on re-queues it.
+  if (!repo.watch) return repo.profile;
   const gh = await ctx.github();
   const head = (await branchHead(gh, repo.fullName, repo.defaultBranch)) ?? repo.headSha;
   const context = await getRepoContext(gh, repo.fullName, head ?? repo.defaultBranch);

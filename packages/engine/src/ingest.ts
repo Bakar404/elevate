@@ -186,7 +186,11 @@ const CLUSTER_THRESHOLD = Number(process.env.ELEVATE_CLUSTER_THRESHOLD ?? 0.82);
 const TRIAGE_BATCH = 15;
 
 /** Classify new items, extract techniques and cluster them into de-duplicated technique records. */
-export async function triageItems(ctx: Ctx, tenantId = "local", maxItems = 45) {
+/**
+ * `currentKey` is the dedupe key of the job running this: a follow-up enqueued under the same key
+ * would be dropped while this job is still running, so the chain alternates between two keys.
+ */
+export async function triageItems(ctx: Ctx, tenantId = "local", maxItems = 45, currentKey?: string | null) {
   const pending = await ctx.db
     .select({ item: items, credibility: sources.credibility, sourceName: sources.name, sourceUrl: sources.url, sourceConfig: sources.config })
     .from(items)
@@ -348,7 +352,8 @@ export async function triageItems(ctx: Ctx, tenantId = "local", maxItems = 45) {
     });
   }
   if (pending.length === maxItems) {
-    await enqueue(ctx.db, "items.triage", {}, { dedupeKey: `items.triage:${tenantId}:more`, tenantId });
+    const more = `items.triage:${tenantId}:more`;
+    await enqueue(ctx.db, "items.triage", {}, { dedupeKey: currentKey === more ? `${more}:next` : more, tenantId });
   }
   return { processed: pending.length, techniques: created.length };
 }

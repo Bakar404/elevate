@@ -25,7 +25,7 @@ export const HANDLERS: Record<string, Handler> = {
     return sweepSources(ctx, job.tenantId);
   },
   "source.fetch": (ctx, p) => fetchSourceItems(ctx, str(p, "sourceId")),
-  "items.triage": (ctx, _p, job) => triageItems(ctx, job.tenantId),
+  "items.triage": (ctx, _p, job) => triageItems(ctx, job.tenantId, undefined, job.dedupeKey),
   "technique.legitimacy": (ctx, p) => legitimacyGate(ctx, str(p, "techniqueId")),
   "technique.match": (ctx, p) => matchTechnique(ctx, str(p, "techniqueId")),
   "recommendation.soundness": (ctx, p) => soundnessGate(ctx, str(p, "recommendationId")),

@@ -1,0 +1,7 @@
+# Verus release used by the proof pipeline (same as proof/RECEIPT.md).
+# VERUS_SHA256_LINUX_X86_64 computed 2026-11-12 with `sha256sum` over the
+# release asset downloaded from VERUS_URL_LINUX_X86_64 (GitHub release
+# release/0.2026.11.02.8bf68ee of verus-lang/verus).
+VERUS_VERSION=0.2026.11.02.8bf68ee
+VERUS_URL_LINUX_X86_64=https://github.com/verus-lang/verus/releases/download/release%2F0.2026.11.02.8bf68ee/verus-0.2026.11.02.8bf68ee-x86-linux.zip
+VERUS_SHA256_LINUX_X86_64=f3a0119292df8855e4435da8130bee1873b0e6a60c306accf81a08ea687bba3c

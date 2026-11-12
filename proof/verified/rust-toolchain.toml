@@ -1,0 +1,6 @@
+# The Rust toolchain the pinned Verus release (scripts/ci/verus.lock) is built
+# against: "toolchain" in the release's version.json.
+[toolchain]
+channel = "1.99.1"
+profile = "minimal"
+targets = ["wasm32-unknown-unknown"]

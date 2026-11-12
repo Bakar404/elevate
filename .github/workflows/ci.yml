@@ -11,6 +11,9 @@ on:
         type: boolean
         default: false
 
+permissions:
+  contents: read
+
 concurrency:
   group: ci-${{ github.ref }}
   cancel-in-progress: true
@@ -20,12 +23,15 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
-      - uses: actions/checkout@v4
-      - uses: pnpm/action-setup@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - uses: pnpm/action-setup@fc06bc1257f339d1d5d8b3a19a8cae5388b55320 # v4.4.0
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
         with:
           node-version: 24
           cache: pnpm
+      # Supply chain: every action is pinned to a commit SHA; the Verus installer rejects a tampered archive.
+      - run: node scripts/ci/check-pinned-actions.mjs && node --test "scripts/ci/*.test.mjs"
+      - run: bash scripts/ci/test-install-verus.sh
       - run: pnpm install --frozen-lockfile
       - run: pnpm typecheck
       # Unit + integration, including the differential test against proof/build/elevate_policy.wasm.
@@ -36,7 +42,7 @@ jobs:
       - run: pnpm --filter @elevate/web exec playwright install --with-deps chromium
       - run: pnpm test:e2e
       - if: failure()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: playwright
           path: apps/web/test-results
@@ -48,24 +54,29 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 45
     steps:
-      - uses: actions/checkout@v4
-      - uses: pnpm/action-setup@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - uses: pnpm/action-setup@fc06bc1257f339d1d5d8b3a19a8cae5388b55320 # v4.4.0
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
         with:
           node-version: 24
           cache: pnpm
       - run: pnpm install --frozen-lockfile
-      - name: Install Verus (same release as proof/RECEIPT.md)
+      - name: Install Verus (pinned and checksummed in scripts/ci/verus.lock)
         run: |
-          curl -sSL -o verus.zip https://github.com/verus-lang/verus/releases/download/release%2F0.2026.11.02.8bf68ee/verus-0.2026.11.02.8bf68ee-x86-linux.zip
-          unzip -q verus.zip -d "$RUNNER_TEMP/verus"
-          VERUS_BIN=$(find "$RUNNER_TEMP/verus" -name verus -type f | head -1)
-          echo "VERUS=$VERUS_BIN" >> "$GITHUB_ENV"
-          TOOLCHAIN=$(grep -oP '(?<=channel = ")[^"]+' "$(dirname "$VERUS_BIN")/rust-toolchain.toml" || echo stable)
+          VERUS_HOME=$(VERUS_DIR="$RUNNER_TEMP/verus" bash scripts/ci/install-verus.sh)
+          echo "$VERUS_HOME" >> "$GITHUB_PATH"
+          echo "VERUS=$VERUS_HOME/verus" >> "$GITHUB_ENV"
+          TOOLCHAIN=$(grep -oP '(?<=channel = ")[^"]+' proof/verified/rust-toolchain.toml)
           rustup toolchain install "$TOOLCHAIN" --profile minimal --target wasm32-unknown-unknown
           echo "RUSTUP_TOOLCHAIN=$TOOLCHAIN-x86_64-unknown-linux-gnu" >> "$GITHUB_ENV"
+      - name: Check Verus version
+        run: |
+          . scripts/ci/verus.lock
+          VERSION=$(verus --version)
+          echo "$VERSION"
+          grep -qF "Version: $VERUS_VERSION" <<< "$VERSION"
       - run: pnpm proof
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: proof-receipt
           path: |

@@ -18,7 +18,9 @@
     "test:e2e": "pnpm --filter @elevate/web test:e2e",
     "eval:gates": "tsx scripts/eval-gates.ts",
     "smoke:copilot": "tsx scripts/smoke-copilot.ts",
-    "proof": "node proof/run.mjs"
+    "proof": "node proof/run.mjs",
+    "ci:check-pins": "node scripts/ci/check-pinned-actions.mjs",
+    "test:ci-scripts": "node --test \"scripts/ci/*.test.mjs\""
   },
   "devDependencies": {
     "@types/node": "^24.0.0",

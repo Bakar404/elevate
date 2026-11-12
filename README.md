@@ -104,7 +104,7 @@ pnpm dev                        # http://localhost:3100
   - Sign in to GitHub with `gh auth login`, or paste a token in Settings. The model runs through your Copilot login.
   - Turn on **Watch** for your repos, and **Swarms** for the ones elevate may write to.
 - **Offline demo:** `ELEVATE_DEMO=1 pnpm dev` uses sample repos and sources, a deterministic model and simulated swarms. It doesn't touch GitHub.
-- **Docker:** `docker compose up --build` runs Postgres, the web app and a separate worker.
+- **Docker:** `docker compose up -d --build` runs Postgres, the web app and a separate worker at http://localhost:3100. They restart on their own (`restart: unless-stopped`), so with Docker Desktop set to start at sign-in, elevate is back after every reboot. `docker compose stop` turns it off.
 - **Check the model runtime:** `pnpm smoke:copilot` makes one structured call through Copilot, or through your BYOK provider.
 
 ## How it works

@@ -1,10 +1,13 @@
 # Postgres + pgvector, the web app, and a separate worker.
-#   docker compose up --build
+#   docker compose up -d --build
+# Every service restarts unless you stop it, so with Docker Desktop set to start at sign-in
+# elevate comes back after a reboot or crash.
 # Credentials come from .env: GITHUB_TOKEN (repo access and the Copilot runtime), and optionally
 # ELEVATE_PROVIDER plus a BYOK key. For the database alone: docker compose up db
 services:
   db:
     image: pgvector/pgvector:pg17
+    restart: unless-stopped
     environment:
       POSTGRES_USER: elevate
       POSTGRES_PASSWORD: elevate
@@ -17,6 +20,7 @@ services:
       retries: 20
 
   web:
+    restart: unless-stopped
     build: &build
       context: .
       args:
@@ -30,6 +34,7 @@ services:
     depends_on: { db: { condition: service_healthy } }
 
   worker:
+    restart: unless-stopped
     build: *build
     command: ["pnpm", "worker"]
     env_file: [{ path: .env, required: false }]

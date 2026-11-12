@@ -1,7 +1,10 @@
 import { recentAudit } from "@elevate/engine";
 import { ShieldCheck } from "lucide-react";
+import { cookies } from "next/headers";
+import { MotionSetting } from "@/components/motion-setting";
 import { SettingsForm } from "@/components/settings-form";
 import { Badge, Card } from "@/components/ui";
+import { MOTION_COOKIE, isMotionPref } from "@/lib/prefs";
 import { readReceipt } from "@/lib/proof";
 import { getCtx } from "@/lib/server";
 import { ago } from "@/lib/utils";
@@ -10,13 +13,16 @@ export const dynamic = "force-dynamic";
 
 export default async function SettingsPage() {
   const ctx = await getCtx();
-  const [audit, receipt] = await Promise.all([recentAudit(ctx, 15), Promise.resolve(readReceipt())]);
+  const [audit, receipt, jar] = await Promise.all([recentAudit(ctx, 15), Promise.resolve(readReceipt()), cookies()]);
+  const motion = jar.get(MOTION_COOKIE)?.value;
   return (
     <div className="mx-auto max-w-4xl px-4 sm:px-8 py-10">
       <h1 className="text-2xl font-semibold tracking-tight">Settings</h1>
-      <p className="mt-1 text-sm text-muted">Model, GitHub access, how strict the gates are, and how far a swarm may go.</p>
+      <p className="mt-1 text-sm text-muted">Model, GitHub access, how strict the gates are, how far a swarm may go, and motion.</p>
 
       <SettingsForm />
+
+      <MotionSetting initial={isMotionPref(motion) ? motion : "system"} />
 
       <Card className="mt-8 p-6" data-testid="proof-card">
         <div className="flex items-start gap-3">

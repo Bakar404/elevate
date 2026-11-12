@@ -2,7 +2,7 @@ import type { Metadata, Viewport } from "next";
 import { cookies } from "next/headers";
 import { Providers } from "@/components/providers";
 import { ThemedToaster } from "@/components/theme";
-import { THEME_COOKIE, themeBootScript } from "@/lib/prefs";
+import { MOTION_COOKIE, THEME_COOKIE, themeBootScript } from "@/lib/prefs";
 import "./globals.css";
 
 export const metadata: Metadata = {
@@ -21,9 +21,11 @@ export const viewport: Viewport = {
 };
 
 export default async function RootLayout({ children }: { children: React.ReactNode }) {
-  const theme = (await cookies()).get(THEME_COOKIE)?.value === "light" ? "light" : "dark";
+  const jar = await cookies();
+  const theme = jar.get(THEME_COOKIE)?.value === "light" ? "light" : "dark";
+  const motion = jar.get(MOTION_COOKIE)?.value;
   return (
-    <html lang="en" className={theme} data-scroll-behavior="smooth" suppressHydrationWarning>
+    <html lang="en" className={theme} data-motion={motion === "on" || motion === "off" ? motion : undefined} data-scroll-behavior="smooth" suppressHydrationWarning>
       <head>
         <script dangerouslySetInnerHTML={{ __html: themeBootScript }} />
       </head>

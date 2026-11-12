@@ -33,6 +33,18 @@ export function isLogoVariant(v: unknown): v is LogoVariant {
   return typeof v === "string" && (LOGO_VARIANTS as readonly string[]).includes(v);
 }
 
+/**
+ * Animations: "system" follows the OS's reduced-motion setting; "on" and "off" override it in this
+ * browser. Remote Desktop sessions often ask for reduced motion without the user choosing it.
+ */
+export const MOTION_COOKIE = "elevate-motion";
+export const MOTION_PREFS = ["system", "on", "off"] as const;
+export type MotionPref = (typeof MOTION_PREFS)[number];
+
+export function isMotionPref(v: unknown): v is MotionPref {
+  return typeof v === "string" && (MOTION_PREFS as readonly string[]).includes(v);
+}
+
 export function setPrefCookie(name: string, value: string) {
   document.cookie = `${name}=${value}; path=/; max-age=31536000; samesite=lax`;
 }

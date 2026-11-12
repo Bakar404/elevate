@@ -81,6 +81,47 @@ test.describe("theme", () => {
   });
 });
 
+test.describe("motion", () => {
+  test.use({ reducedMotion: "reduce" });
+  test("the map says when the system holds it still, and Settings → Motion overrides that", async ({ page }) => {
+    await waitForOpenRecs(page);
+    const html = page.locator("html");
+    const graph = page.getByTestId("activity-graph");
+    const particles = graph.locator("animateMotion");
+    const hint = page.getByTestId("map-motion-hint");
+    await page.goto("/");
+    await expect(hint).toBeVisible();
+    await expect(particles).toHaveCount(0);
+
+    await page.getByTestId("map-motion").click();
+    await expect(html).toHaveAttribute("data-motion", "on");
+    await expect(particles.first()).toBeAttached();
+    // CSS animations run too, so the reduced-motion kill switch in globals.css stood aside.
+    await expect(graph.locator(".graph-spin").first()).toHaveCSS("animation-duration", "40s");
+    await expect(hint).toHaveCount(0);
+
+    await page.goto("/settings#motion");
+    await expect(page.getByRole("radio", { name: "On", exact: true })).toBeChecked();
+    await expect(page.getByTestId("motion-card")).toBeInViewport();
+    await page.getByTestId("motion-off").click();
+    await expect(html).toHaveAttribute("data-motion", "off");
+    // Off holds still even where the system allows motion, and there is nothing to offer.
+    await page.emulateMedia({ reducedMotion: "no-preference" });
+    await page.goto("/");
+    await expect(graph).toBeVisible();
+    await expect(particles).toHaveCount(0);
+    await expect(hint).toHaveCount(0);
+
+    await page.goto("/settings#motion");
+    await page.getByTestId("motion-system").click();
+    await expect(html).not.toHaveAttribute("data-motion");
+    await page.goto("/");
+    await expect(particles.first()).toBeAttached();
+    await expect(graph.locator(".graph-spin").first()).toHaveCSS("animation-duration", "40s");
+    await expect(hint).toHaveCount(0);
+  });
+});
+
 test("hype is filtered on the radar with its reasons", async ({ page }) => {
   await page.goto("/radar?show=hype");
   await expect(page.getByText(/weight-space/i).first()).toBeVisible();

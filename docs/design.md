@@ -21,7 +21,7 @@ A calm, dark work surface over a living, dithered landscape. The background carr
 
 - Each dither cell is 2 CSS px, snapped to device pixels, so it stays crisp at any zoom level.
 - The canvas renders at cell resolution and is upscaled with `image-rendering: pixelated`, so a frame is cheap.
-- Clouds drift at about 15 fps. Rendering pauses when the hero is off-screen or the tab is hidden, and under `prefers-reduced-motion` it draws one static frame.
+- Clouds drift at about 15 fps. Rendering pauses when the hero is off-screen or the tab is hidden, and when motion is reduced (see Motion below) it draws one static frame.
 - A vertical scrim fades the landscape into `bg`, so the content below keeps its contrast.
 
 ## Tokens (`app/globals.css`, Tailwind v4 `@theme`)
@@ -48,7 +48,10 @@ A calm, dark work surface over a living, dithered landscape. The background carr
 - Animate only `transform` and `opacity`.
 - Stagger lists by 40 ms per item, capped at 8 items, so long lists don't feel slow.
 - No animation on actions repeated many times a day: the palette opens instantly, and so does keyboard navigation.
-- Honour `prefers-reduced-motion` everywhere. Toasts, shimmer and the background degrade to static.
+- Honour reduced motion everywhere. Toasts, shimmer and the background degrade to static.
+  - By default elevate follows the system's `prefers-reduced-motion`. Settings → Motion (Match system / On / Off) overrides it in this browser: the `elevate-motion` cookie is rendered on the server as `<html data-motion="on|off">`, so the first paint is right. Remote Desktop sessions often ask for reduced motion without the user choosing it, so when the live map holds still for that reason it says so and offers **Animate anyway**.
+  - CSS uses the `motion-safe` and `motion-reduce` variants, redefined in `globals.css` to include the override (the global kill switch, smooth scrolling and Pip use them too). JS uses `lib/motion.ts` (`usePrefersReducedMotion`, `prefersReducedMotion`, `subscribeMotion`). Nothing else reads the media query.
+  - Sonner's toasts follow the system only; its own CSS stills them.
 
 ## Shell and live map
 
@@ -61,8 +64,8 @@ A calm, dark work surface over a living, dithered landscape. The background carr
     - sand: PR open
   - A repo that is being worked on, or that has recommendations waiting, pulses.
   - Hovering a node dims everything that isn't connected to it.
-  - All motion is SVG/SMIL and CSS and stops under `prefers-reduced-motion`.
-- **Pip:** the lookout in the sidebar (`components/mascot.tsx`), an inline SVG animated with CSS only. Its mood comes from the same counts as the nav badges: dozing when nothing is waiting, bouncing with a pinging antenna when a recommendation is ready, wiggling with a blue light while a swarm runs. Its eyes follow the pointer, a click makes it hop and opens a one-line status, and "Hide Pip" (or ⌘K) puts it away, remembered in a cookie. On phones it sits in the top bar; under `prefers-reduced-motion` it holds still.
+  - All motion is SVG/SMIL and CSS and stops when motion is reduced. If that is only because the system asks, the legend says so, with **Animate anyway**.
+- **Pip:** the lookout in the sidebar (`components/mascot.tsx`), an inline SVG animated with CSS only. Its mood comes from the same counts as the nav badges: dozing when nothing is waiting, bouncing with a pinging antenna when a recommendation is ready, wiggling with a blue light while a swarm runs. Its eyes follow the pointer, a click makes it hop and opens a one-line status, and "Hide Pip" (or ⌘K) puts it away, remembered in a cookie. On phones it sits in the top bar; when motion is reduced it holds still.
 - **Set aside, not hidden:** news the user can't act on gets a sand badge (`outdated`, `not connected`, `not on your plan`) and its own Radar tab, with the reason in a sentence. The "Tuned for" strip on Home and Radar says whose news this is and links to the switches in Settings.
 - **Radar list:** filter, category chips and sort run in the browser (`components/techniques.tsx`); they appear once there are more than three techniques.
 - **Rails:** a sideways rail fades at an edge only while there is more to scroll that way (scroll-driven animation on the mask), so a rail that fits is not clipped.

@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef } from "react";
+import { prefersReducedMotion, subscribeMotion } from "@/lib/motion";
 import { cn } from "@/lib/utils";
 
 /**
@@ -124,7 +125,6 @@ export function DitherBackground({ className, seed = 7 }: { className?: string; 
     if (!canvas) return;
     const ctx = canvas.getContext("2d", { alpha: false });
     if (!ctx) return;
-    const reduced = window.matchMedia("(prefers-reduced-motion: reduce)");
     let field: Field | undefined;
     let img: ImageData | undefined;
     let raf = 0;
@@ -148,7 +148,7 @@ export function DitherBackground({ className, seed = 7 }: { className?: string; 
 
     const frame = (now: number) => {
       raf = 0;
-      if (!field || !img || !visible || document.hidden || reduced.matches) return;
+      if (!field || !img || !visible || document.hidden || prefersReducedMotion()) return;
       if (now - last > 66) {
         last = now;
         const phase = (now % PERIOD) / PERIOD;
@@ -174,13 +174,13 @@ export function DitherBackground({ className, seed = 7 }: { className?: string; 
     io.observe(canvas);
     const onVis = () => !document.hidden && start();
     document.addEventListener("visibilitychange", onVis);
-    reduced.addEventListener("change", start);
+    const unsubscribe = subscribeMotion(start);
     return () => {
       cancelAnimationFrame(raf);
       ro.disconnect();
       io.disconnect();
       document.removeEventListener("visibilitychange", onVis);
-      reduced.removeEventListener("change", start);
+      unsubscribe();
     };
   }, [seed]);
 

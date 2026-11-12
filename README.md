@@ -110,6 +110,7 @@ pnpm dev                        # http://localhost:3100
 - **Docker:** `docker compose up -d --build` runs Postgres, the web app and a separate worker at http://localhost:3100. They restart on their own (`restart: unless-stopped`), so with Docker Desktop set to start at sign-in, elevate is back after every reboot. `docker compose stop` turns it off.
 - **Check the model runtime:** `pnpm smoke:copilot` makes one structured call through Copilot, or through your BYOK provider.
 - **Pages reload over and over under `pnpm dev`?** Turbopack's dev cache is stale. Stop the server, delete `apps/web/.next/dev`, and start it again.
+- **Live map not moving?** Your system asks apps to reduce motion (Remote Desktop sessions often do), and elevate follows it. The map says so: click **Animate anyway**, or pick **On** in Settings → Motion. Either way it's remembered in that browser.
 
 ## How it works
 

@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
+import { usePrefersReducedMotion } from "@/lib/motion";
 import { PIP_COOKIE, PIP_EVENT, setPrefCookie } from "@/lib/prefs";
 import { cn } from "@/lib/utils";
 
@@ -14,13 +15,14 @@ export function pipMood(counts: { open: number; activeSwarms: number }): PipMood
 /**
  * Pip, elevate's lookout: a small radar critter. It dozes when nothing is waiting, perks up when a
  * recommendation is ready and gets busy while a swarm runs. Its eyes follow the pointer. All motion
- * is CSS and stops under prefers-reduced-motion (see globals.css).
+ * is CSS and holds still when motion is reduced (Settings → Motion, or the system; see globals.css).
  */
 export function Pip({ mood, size = 44, className }: { mood: PipMood; size?: number; className?: string }) {
   const ref = useRef<SVGSVGElement>(null);
+  const reduce = usePrefersReducedMotion();
 
   useEffect(() => {
-    if (mood === "sleepy" || matchMedia("(prefers-reduced-motion: reduce)").matches || !matchMedia("(pointer: fine)").matches) return;
+    if (mood === "sleepy" || reduce || !matchMedia("(pointer: fine)").matches) return;
     let frame = 0;
     const onMove = (e: PointerEvent) => {
       cancelAnimationFrame(frame);
@@ -41,7 +43,7 @@ export function Pip({ mood, size = 44, className }: { mood: PipMood; size?: numb
       window.removeEventListener("pointermove", onMove);
       cancelAnimationFrame(frame);
     };
-  }, [mood]);
+  }, [mood, reduce]);
 
   const signal = mood === "alert" ? "var(--color-olive)" : mood === "working" ? "var(--color-sky)" : "var(--color-faint)";
   return (

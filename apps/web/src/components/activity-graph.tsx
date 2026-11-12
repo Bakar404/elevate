@@ -5,7 +5,8 @@ import { motion } from "motion/react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useMemo, useState } from "react";
-import { usePrefersReducedMotion } from "@/lib/motion";
+import { toast } from "sonner";
+import { setMotionPref, useMotionPref, usePrefersReducedMotion } from "@/lib/motion";
 import type { LogoVariant } from "@/lib/prefs";
 import { cn } from "@/lib/utils";
 import { LogoMark } from "./logo";
@@ -91,6 +92,9 @@ function Particle({ d, color, dur, begin, r = 2.2 }: { d: string; color: string;
 
 export function ActivityGraph({ data, logo }: { data: Graph; logo?: LogoVariant }) {
   const reduce = usePrefersReducedMotion();
+  const motionPref = useMotionPref();
+  // Held still only because the system asks (Remote Desktop often does), not by the user's choice in Settings.
+  const paused = reduce && motionPref === "system";
   const router = useRouter();
   const [hover, setHover] = useState<string | null>(null);
   const { repoPos, techPos } = useMemo(() => layout(data), [data]);
@@ -123,10 +127,32 @@ export function ActivityGraph({ data, logo }: { data: Graph; logo?: LogoVariant 
         <Legend color="var(--color-olive)" label={`${counts.review} awaiting review`} />
         <Legend color="var(--color-cloud)" label={`${counts.watched} watched`} />
         <Legend color="var(--color-sand)" label={`${data.techniques.length} matched technique${data.techniques.length === 1 ? "" : "s"}`} square />
-        {data.hidden > 0 && (
-          <Link href="/repos" className="ml-auto text-faint transition-colors hover:text-fg">
-            +{data.hidden} more
-          </Link>
+        {(paused || data.hidden > 0) && (
+          <span className="ml-auto flex items-center gap-x-4">
+            {paused && (
+              <span data-testid="map-motion-hint" className="text-faint">
+                Paused: your system asks for reduced motion.{" "}
+                <button
+                  type="button"
+                  data-testid="map-motion"
+                  onClick={() => {
+                    setMotionPref("on");
+                    toast.success("Animations on in this browser", {
+                      action: { label: "Motion settings", onClick: () => router.push("/settings#motion") },
+                    });
+                  }}
+                  className="text-sky underline decoration-sky/40 underline-offset-4 hover:decoration-sky"
+                >
+                  Animate anyway
+                </button>
+              </span>
+            )}
+            {data.hidden > 0 && (
+              <Link href="/repos" className="text-faint transition-colors hover:text-fg">
+                +{data.hidden} more
+              </Link>
+            )}
+          </span>
         )}
       </div>
 

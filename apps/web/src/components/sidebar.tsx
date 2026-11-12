@@ -5,6 +5,7 @@ import { motion } from "motion/react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useCallback, useEffect, useState, type ReactElement } from "react";
+import { useModKey } from "@/lib/mod-key";
 import { cn } from "@/lib/utils";
 import { setPrefCookie, SIDEBAR_COOKIE, SIDEBAR_EVENT, type LogoVariant } from "@/lib/prefs";
 import { LogoMark } from "./logo";
@@ -40,6 +41,7 @@ export function Sidebar({
   pipHidden?: boolean;
 }) {
   const pathname = usePathname();
+  const mod = useModKey();
   const [collapsed, setCollapsed] = useState(initialCollapsed);
 
   const toggle = useCallback(() => setCollapsed((c) => !c), []);
@@ -123,7 +125,7 @@ export function Sidebar({
         <PipCompanion counts={counts} compact={collapsed} initialHidden={pipHidden} />
         {tip("Toggle theme", <ThemeToggle labelClassName={label} />)}
         {tip(
-          "Command ⌘K",
+          `Command ${mod}K`,
           <button
             onClick={() => window.dispatchEvent(new Event("elevate:palette"))}
             aria-label="Command palette"
@@ -131,11 +133,11 @@ export function Sidebar({
           >
             <Command className="size-3.5 shrink-0" />
             <span className={label}>Command</span>
-            <kbd className={cn("ml-auto font-mono text-[11px]", label)}>⌘K</kbd>
+            <kbd className={cn("ml-auto font-mono text-[11px]", label)}>{mod}K</kbd>
           </button>,
         )}
         {tip(
-          "Expand ⌘B",
+          `Expand ${mod}B`,
           <button
             onClick={toggle}
             aria-label={collapsed ? "Expand sidebar" : "Collapse sidebar"}
@@ -145,7 +147,7 @@ export function Sidebar({
           >
             {collapsed ? <PanelLeftOpen className="size-4 shrink-0" /> : <PanelLeftClose className="size-4 shrink-0" />}
             <span className={label}>Collapse</span>
-            <kbd className={cn("ml-auto font-mono text-[11px]", label)}>⌘B</kbd>
+            <kbd className={cn("ml-auto font-mono text-[11px]", label)}>{mod}B</kbd>
           </button>,
         )}
       </div>

@@ -54,6 +54,24 @@ export function repair(value: unknown, schema: unknown): unknown {
   return value;
 }
 
+/**
+ * The JSON in a model reply: the whole reply, a fenced block, or the outermost object inside prose.
+ * Undefined when there is none (a model asked for JSON can still answer in prose).
+ */
+export function parseJsonReply(text: string): unknown {
+  const t = text.trim();
+  const start = t.indexOf("{");
+  const end = t.lastIndexOf("}");
+  const candidates = [t, /```(?:json)?\s*([\s\S]*?)```/.exec(t)?.[1], start >= 0 && end > start ? t.slice(start, end + 1) : undefined];
+  for (const c of candidates) {
+    if (!c) continue;
+    try {
+      return JSON.parse(c);
+    } catch {}
+  }
+  return undefined;
+}
+
 /** Wrap a zod schema for `session.sendAndWait`: provider-safe JSON Schema out, repaired + validated value in. */
 export function responseSchema<T>(schema: z.ZodType<T>) {
   const original = (schema as unknown as { toJSONSchema(): Json }).toJSONSchema();

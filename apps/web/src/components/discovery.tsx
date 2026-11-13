@@ -3,11 +3,10 @@ import { ArrowUpRight, Crosshair, Search } from "lucide-react";
 import { Badge } from "@/components/ui";
 import { ago, cn } from "@/lib/utils";
 
-const STATUS: Record<string, { label: string; tone: "olive" | "sand" | "sky" | "neutral" }> = {
+const STATUS: Record<string, { label: string; tone: "olive" | "sand" | "sky" | "neutral" | "danger" }> = {
   new: { label: "queued", tone: "neutral" },
   irrelevant: { label: "not relevant", tone: "neutral" },
   triaged: { label: "relevant", tone: "sky" },
-  error: { label: "error", tone: "neutral" },
 };
 
 function shortRepo(fullName: string) {
@@ -34,6 +33,8 @@ export function FeedRow({ item }: { item: FeedItem }) {
     ? { label: /superseded/.test(item.blocked) ? "outdated" : "not for your setup", tone: "sand" as const }
     : item.technique
     ? { label: item.legit === false ? "hype" : item.legit ? "legit" : "checking", tone: item.legit === false ? ("neutral" as const) : item.legit ? ("olive" as const) : ("sand" as const) }
+    : item.failed
+    ? { label: item.failed.retrying ? "retrying" : "failed", tone: item.failed.retrying ? ("sand" as const) : ("danger" as const) }
     : (STATUS[item.status] ?? STATUS.new!);
   return (
     <li className="cv-auto group flex items-start gap-3 border-b border-line px-1 py-3 last:border-0" data-testid="feed-item">
@@ -55,8 +56,14 @@ export function FeedRow({ item }: { item: FeedItem }) {
           {item.technique && <span className="text-muted">→ {item.technique}</span>}
           <RepoChips repos={item.repos} />
         </div>
+        {item.failed && (
+          <p className={cn("mt-1 line-clamp-2 text-xs", item.failed.retrying ? "text-sand" : "text-danger")} data-testid="feed-item-failed">
+            Couldn't classify this: {item.failed.reason.replace(/[.\s]+$/, "")}.{" "}
+            {item.failed.retrying ? "It's tried again on the next sweep." : "Use Sweep now on the Radar to try again."}
+          </p>
+        )}
       </div>
-      <Badge tone={s.tone} className="shrink-0" title={item.blocked ?? undefined}>
+      <Badge tone={s.tone} className="shrink-0" title={item.blocked ?? item.failed?.reason ?? undefined}>
         {s.label}
       </Badge>
     </li>

@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { z } from "zod";
-import { responseSchema } from "../src/schema";
+import { parseJsonReply, responseSchema } from "../src/schema";
 
 const review = z.object({
   score: z.number().min(0).max(100),
@@ -28,5 +28,14 @@ describe("responseSchema", () => {
 
   it("still rejects answers that are wrong rather than out of range", () => {
     expect(() => responseSchema(review).parse({ score: 50, risk: "extreme", tasks: [] })).toThrow();
+  });
+});
+
+describe("parseJsonReply", () => {
+  it("finds the JSON in a fenced block or inside prose, and nothing in plain prose", () => {
+    expect(parseJsonReply('Here you go:\n```json\n{"a": [1, 2]}\n```\nAnything else?')).toEqual({ a: [1, 2] });
+    expect(parseJsonReply('Sure. {"results": [{"index": 0}]} Hope that helps.')).toEqual({ results: [{ index: 0 }] });
+    expect(parseJsonReply("The model thinks item {3} is relevant.")).toBeUndefined();
+    expect(parseJsonReply("")).toBeUndefined();
   });
 });

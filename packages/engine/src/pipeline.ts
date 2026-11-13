@@ -2,7 +2,7 @@ import { claimJob, completeJob, emit, failJob, getSetting, recoverStaleJobs, set
 import { resolveGitHubToken } from "@elevate/github";
 import type { Ctx } from "./context";
 import { legitimacyGate, soundnessGate } from "./gates";
-import { fetchSourceItems, seedSources, sweepSources, triageItems } from "./ingest";
+import { fetchSourceItems, retryFailedTriage, seedSources, sweepSources, triageItems } from "./ingest";
 import { matchRepo, matchTechnique } from "./matcher";
 import { profileRepo, syncRepos } from "./profiler";
 import { prCheckMinutes, trackPullRequests } from "./prs";
@@ -20,8 +20,10 @@ export const HANDLERS: Record<string, Handler> = {
   "repos.sync": (ctx, p, job) => syncRepos(ctx, job.tenantId, { scheduled: p.scheduled === true }),
   "repo.profile": (ctx, p) => profileRepo(ctx, str(p, "repoId")),
   "repo.match": (ctx, p) => matchRepo(ctx, str(p, "repoId")),
-  "sources.sweep": async (ctx, _p, job) => {
+  "sources.sweep": async (ctx, p, job) => {
     await seedSources(ctx, job.tenantId);
+    // Sweep now retries every failed item before it queues this job; a scheduled sweep retries those with tries left.
+    if (p.scheduled === true) await retryFailedTriage(ctx, job.tenantId);
     return sweepSources(ctx, job.tenantId);
   },
   "source.fetch": (ctx, p) => fetchSourceItems(ctx, str(p, "sourceId")),

@@ -112,6 +112,7 @@ pnpm dev                        # http://localhost:3100
 - **Check the model runtime:** `pnpm smoke:copilot` makes one structured call through Copilot, or through your BYOK provider.
 - **Pages reload over and over under `pnpm dev`?** Turbopack's dev cache is stale. Stop the server, delete `apps/web/.next/dev`, and start it again.
 - **Live map not moving?** Your system asks apps to reduce motion (Remote Desktop sessions often do), and elevate follows it. The map says so: click **Animate anyway**, or pick **On** in Settings → Motion. Either way it's remembered in that browser.
+- **An item says "retrying" or "failed"?** The model couldn't classify it. The usual cause is the model provider's content filter blocking the answer about that item; elevate splits the batch until only the item that tripped the filter fails, so the rest of its batch is still classified. Less often the model answers in prose instead of JSON. The row says why. The next sweeps try again, up to 3 times; after that it says "failed" until you press **Sweep now** on the Radar, which retries every failed item. Your sources are fine: a source that can't be fetched shows its error on the Radar's source list instead.
 
 ## How it works
 

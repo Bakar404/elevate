@@ -1,5 +1,5 @@
-import { cosine } from "@elevate/agent";
-import { and, desc, emit, enqueue, eq, inArray, items, repos, sources, sql, techniques, type ItemSignals } from "@elevate/db";
+import { cosine, isContentFiltered } from "@elevate/agent";
+import { and, desc, emit, enqueue, eq, inArray, items, lt, repos, sources, sql, techniques, type ItemSignals } from "@elevate/db";
 import {
   buildFocusQueries,
   compareVersions,
@@ -184,6 +184,32 @@ export function slugify(s: string): string {
 
 const CLUSTER_THRESHOLD = Number(process.env.ELEVATE_CLUSTER_THRESHOLD ?? 0.82);
 const TRIAGE_BATCH = 15;
+/** Scheduled sweeps retry an item whose triage failed until it has failed this many times. */
+export const TRIAGE_TRIES = 3;
+
+/** One line for the feed: a schema mismatch names its first problem instead of dumping zod's JSON. */
+function failureReason(err: unknown): string {
+  if (isContentFiltered(err)) return "The model provider's content filter blocked the answer about this item";
+  const issues = (err as { issues?: { path: PropertyKey[]; message: string }[] } | null)?.issues;
+  if (Array.isArray(issues) && issues[0]) {
+    return `The model's answer didn't match the expected format (${issues[0].path.map(String).join(".") || "answer"}: ${issues[0].message})`;
+  }
+  return (err instanceof Error ? err.message : String(err)).replace(/\s+/g, " ").trim().slice(0, 300);
+}
+
+/**
+ * Put items whose triage failed back in the queue. On its own (each sweep) only those with tries left;
+ * `all` (a sweep the user started) retries every one. Returns how many were requeued.
+ */
+export async function retryFailedTriage(ctx: Ctx, tenantId = "local", opts: { all?: boolean } = {}) {
+  const requeued = await ctx.db
+    .update(items)
+    .set({ status: "new", lastError: null })
+    .where(and(eq(items.tenantId, tenantId), eq(items.status, "error"), opts.all ? undefined : lt(items.attempts, TRIAGE_TRIES)))
+    .returning({ id: items.id });
+  if (requeued.length) await enqueue(ctx.db, "items.triage", {}, { dedupeKey: `items.triage:${tenantId}`, tenantId });
+  return requeued.length;
+}
 
 /** Classify new items, extract techniques and cluster them into de-duplicated technique records. */
 /**
@@ -236,8 +262,10 @@ export async function triageItems(ctx: Ctx, tenantId = "local", maxItems = 45, c
   const foundFor = (s: ItemSignals) =>
     s.focus ? `\nFound searching "${s.focus.query}" for: ${s.focus.repoIds.map((id) => repoNames.get(id)).filter(Boolean).slice(0, 4).join("; ")}` : "";
 
-  for (let i = 0; i < fresh.length; i += TRIAGE_BATCH) {
-    const batch = fresh.slice(i, i + TRIAGE_BATCH);
+  const batches: (typeof fresh)[] = [];
+  for (let i = 0; i < fresh.length; i += TRIAGE_BATCH) batches.push(fresh.slice(i, i + TRIAGE_BATCH));
+  while (batches.length) {
+    const batch = batches.shift()!;
     const prompt =
       `${header}\n\n` +
       batch
@@ -250,11 +278,24 @@ export async function triageItems(ctx: Ctx, tenantId = "local", maxItems = 45, c
     try {
       result = await ctx.llm.json({ task: "triage", system: TRIAGE_SYSTEM, prompt, schema: TriageSchema });
     } catch (err) {
+      // One item can trip the content filter for its whole batch: halve the batch until only that item fails.
+      if (isContentFiltered(err) && batch.length > 1) {
+        const half = Math.ceil(batch.length / 2);
+        batches.unshift(batch.slice(0, half), batch.slice(half));
+        continue;
+      }
+      const reason = failureReason(err);
       await ctx.db
         .update(items)
-        .set({ status: "error" })
+        .set({ status: "error", lastError: reason, attempts: sql`${items.attempts} + 1` })
         .where(inArray(items.id, batch.map((b) => b.item.id)));
-      await emit(ctx.db, { kind: "triage.error", level: "error", message: `Triage failed: ${String(err).slice(0, 200)}` });
+      const retrying = batch.some((b) => b.item.attempts + 1 < TRIAGE_TRIES);
+      await emit(ctx.db, {
+        kind: "triage.error",
+        level: retrying ? "warn" : "error",
+        message: `Couldn't classify ${batch.length} item${batch.length === 1 ? "" : "s"}: ${reason.slice(0, 200)}. ${retrying ? "The next sweep tries again." : "Sweep now on the Radar to try again."}`,
+        tenantId,
+      });
       continue;
     }
     const byIndex = new Map(result.results.map((r) => [r.index, r]));

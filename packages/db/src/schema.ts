@@ -148,10 +148,14 @@ export const items = pgTable(
     publishedAt: timestamp("published_at", { withTimezone: true }),
     content: text("content"),
     signals: jsonb("signals").$type<ItemSignals>().notNull().default({}),
-    /** new -> triaged (technique linked) | irrelevant */
+    /** new -> triaged (technique linked) | irrelevant; error when the model call for its batch failed (sweeps retry it). */
     status: text("status").$type<"new" | "triaged" | "irrelevant" | "error">().notNull().default("new"),
     techniqueId: uuid("technique_id"),
     embedding: vector("embedding", { dimensions: EMBEDDING_DIM }),
+    /** Why triage last failed, while status is error. */
+    lastError: text("last_error"),
+    /** Failed triage attempts; scheduled sweeps stop retrying at TRIAGE_TRIES. */
+    attempts: integer("attempts").notNull().default(0),
     createdAt: createdAt(),
   },
   (t) => [

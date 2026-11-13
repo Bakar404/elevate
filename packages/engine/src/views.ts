@@ -2,7 +2,7 @@ import { and, asc, auditLog, desc, eq, events, inArray, isNotNull, items, recomm
 import { defaultSources, ECOSYSTEM_LABEL, sourceEcosystem } from "@elevate/sources";
 import { accessProfile, accessView, verdictFor } from "./access";
 import type { Ctx } from "./context";
-import { focusQueries } from "./ingest";
+import { focusQueries, TRIAGE_TRIES } from "./ingest";
 import { autoMerge, prCheckMinutes, prNextStep, type PrNextStep, type SwarmPr } from "./prs";
 
 /**
@@ -293,6 +293,8 @@ export async function discoveryFeed(ctx: Ctx, opts: { limit?: number; repoOnly?:
       title: items.title,
       url: items.url,
       status: items.status,
+      lastError: items.lastError,
+      attempts: items.attempts,
       signals: items.signals,
       publishedAt: items.publishedAt,
       createdAt: items.createdAt,
@@ -331,12 +333,14 @@ export async function discoveryFeed(ctx: Ctx, opts: { limit?: number; repoOnly?:
     .filter((r) => !opts.hideHype || !r.blocked)
     .filter((r) => !opts.repoOnly || (r.signals.focus?.repoIds ?? []).some((id) => name(id)))
     .slice(0, limit)
-    .map(({ signals, ...r }) => ({
+    .map(({ signals, lastError, attempts, ...r }) => ({
     ...r,
     points: signals.points ?? null,
     stars: signals.stars ?? null,
     query: signals.focus?.query ?? null,
     repos: (signals.focus?.repoIds ?? []).map(name).filter(Boolean) as string[],
+    /** Why the model couldn't classify this item, and whether a scheduled sweep will try again. */
+    failed: r.status === "error" ? { reason: lastError ?? "no reason was recorded", retrying: attempts < TRIAGE_TRIES } : null,
   }));
 }
 

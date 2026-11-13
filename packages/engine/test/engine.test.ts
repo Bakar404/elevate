@@ -1,5 +1,5 @@
-import { HashingEmbedder } from "@elevate/agent";
-import { auditLog, createDb, enqueue, eq, recommendations, repos, setSetting, swarms, swarmTasks, techniques } from "@elevate/db";
+import { ContentFiltered, HashingEmbedder } from "@elevate/agent";
+import { auditLog, createDb, enqueue, eq, inArray, items, recommendations, repos, setSetting, sources, swarms, swarmTasks, techniques } from "@elevate/db";
 import { FakeGitHub } from "@elevate/executors";
 import { replay } from "@elevate/policy";
 import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from "vitest";
@@ -28,6 +28,9 @@ import {
   radar,
   threadMessages,
   trackPullRequests,
+  retryFailedTriage,
+  triageItems,
+  TRIAGE_TRIES,
   type Ctx,
   type SwarmPr,
 } from "../src";
@@ -456,5 +459,72 @@ describe("following and merging the swarm's PR (M1–M3, T5)", () => {
     for (const s of [stage(), stage({ autoMerge: true }), stage({}, null), stage({ allowSwarm: false })]) {
       expect(s.title.length * s.detail.length).toBeGreaterThan(0);
     }
+  });
+});
+
+describe("triage that fails", () => {
+  it("shows why, retries on the next sweeps until it runs out of tries, and Sweep now retries it anyway", async () => {
+    const [src] = await ctx.db.select({ id: sources.id }).from(sources).limit(1);
+    const [added] = await ctx.db
+      .insert(items)
+      .values({ sourceId: src!.id, url: "https://example.com/flaky-triage", title: "A weekend gardening newsletter", publishedAt: new Date() })
+      .returning({ id: items.id });
+    const broken: Ctx = { ...ctx, llm: { name: "broken", json: () => Promise.reject(new Error('The model replied with text instead of JSON: "Sure!"')) } };
+    const state = async () => {
+      const [row] = await ctx.db.select({ status: items.status, attempts: items.attempts, lastError: items.lastError }).from(items).where(eq(items.id, added!.id));
+      return { ...row!, failed: (await discoveryFeed(ctx)).find((i) => i.id === added!.id)?.failed };
+    };
+
+    await triageItems(broken);
+    expect(await state()).toMatchObject({
+      status: "error",
+      attempts: 1,
+      lastError: expect.stringContaining("instead of JSON"),
+      failed: { reason: expect.stringContaining("instead of JSON"), retrying: true },
+    });
+
+    for (let n = 1; n < TRIAGE_TRIES; n++) {
+      expect(await retryFailedTriage(broken)).toBe(1);
+      await triageItems(broken);
+    }
+    expect(await state()).toMatchObject({ status: "error", attempts: TRIAGE_TRIES, failed: { retrying: false } });
+    expect(await retryFailedTriage(ctx)).toBe(0);
+
+    expect(await retryFailedTriage(ctx, "local", { all: true })).toBe(1);
+    await drain(ctx);
+    expect(await state()).toMatchObject({ status: "irrelevant", lastError: null, failed: null });
+  });
+
+  it("when the content filter blocks a batch, finds the item that tripped it and classifies the rest", async () => {
+    const [src] = await ctx.db.select({ id: sources.id }).from(sources).limit(1);
+    const titles = ["Garden club minutes", "Forbidden recipe", "Village fete schedule", "Bakery opening hours"];
+    const added = await ctx.db
+      .insert(items)
+      .values(titles.map((title, i) => ({ sourceId: src!.id, url: `https://example.com/filtered-${i}`, title, publishedAt: new Date() })))
+      .returning({ id: items.id });
+    const demo = demoLLM();
+    let calls = 0;
+    const filtered: Ctx = {
+      ...ctx,
+      llm: {
+        name: "filtered",
+        json: (req) => {
+          calls++;
+          return req.prompt.includes("Forbidden") ? Promise.reject(new ContentFiltered("blocked by content filtering")) : demo.json(req);
+        },
+      },
+    };
+
+    await triageItems(filtered);
+    const rows = await ctx.db.select({ title: items.title, status: items.status, lastError: items.lastError }).from(items).where(inArray(items.id, added.map((a) => a.id)));
+    expect(Object.fromEntries(rows.map((r) => [r.title, r.status]))).toEqual({
+      "Garden club minutes": "irrelevant",
+      "Forbidden recipe": "error",
+      "Village fete schedule": "irrelevant",
+      "Bakery opening hours": "irrelevant",
+    });
+    expect(rows.find((r) => r.status === "error")?.lastError).toMatch(/content filter/);
+    // The batch of 4, its halves, then the halves of the half that was blocked.
+    expect(calls).toBe(5);
   });
 });

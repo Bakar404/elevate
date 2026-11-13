@@ -15,7 +15,7 @@
   <a href="https://github.com/Bakar404/elevate/stargazers"><img src="https://img.shields.io/github/stars/Bakar404/elevate?style=flat" alt="Stars"></a>
   <img src="https://img.shields.io/badge/runs%20on-GitHub%20Copilot-8957e5?logo=githubcopilot&logoColor=white" alt="Runs on GitHub Copilot">
   <img src="https://img.shields.io/badge/built-proof--first-2ea043" alt="Built proof-first">
-  <a href="CONTRIBUTING.md"><img src="https://img.shields.io/badge/PRs-welcome-blue" alt="PRs welcome"></a>
+  <a href=".github/CONTRIBUTING.md"><img src="https://img.shields.io/badge/PRs-welcome-blue" alt="PRs welcome"></a>
 </p>
 
 <p align="center">
@@ -268,7 +268,7 @@ In Docker, put `GITHUB_TOKEN` (and any BYOK key) in `.env`, because a container 
 
 ## Contributing
 
-New source connectors, executors and gate eval cases are the most useful contributions. See [CONTRIBUTING.md](CONTRIBUTING.md). Ask questions and share ideas in [Discussions](https://github.com/Bakar404/elevate/discussions), and [suggest a source](https://github.com/Bakar404/elevate/issues/new?template=new_source.yml) you think elevate should watch.
+New source connectors, executors and gate eval cases are the most useful contributions. See [CONTRIBUTING.md](.github/CONTRIBUTING.md). Ask questions and share ideas in [Discussions](https://github.com/Bakar404/elevate/discussions), and [suggest a source](https://github.com/Bakar404/elevate/issues/new?template=new_source.yml) you think elevate should watch.
 
 If elevate is useful to you, a ⭐ helps other people find it.
 

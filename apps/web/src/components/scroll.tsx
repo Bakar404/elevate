@@ -37,7 +37,7 @@ export function Reveal({ children, className, delay = 0 }: { children: ReactNode
   );
 }
 
-/** Appears after a screen of scrolling. */
+/** Appears after a screen of scrolling. On desktop it sits just above the corner Pip. */
 export function BackToTop() {
   const [show, setShow] = useState(false);
   useEffect(() => {
@@ -52,7 +52,7 @@ export function BackToTop() {
       aria-label="Back to top"
       onClick={() => window.scrollTo({ top: 0, behavior: prefersReducedMotion() ? "auto" : "smooth" })}
       className={cn(
-        "fixed bottom-6 right-6 z-40 max-md:bottom-[calc(5rem+env(safe-area-inset-bottom))] max-md:right-4 grid size-10 place-items-center rounded-full border border-line-strong bg-raised/80 text-muted shadow-lg backdrop-blur transition-[opacity,transform,color] duration-200 hover:text-fg",
+        "fixed bottom-6 right-6 z-40 max-md:bottom-[calc(5rem+env(safe-area-inset-bottom))] max-md:right-4 md:pip-on:bottom-24 md:pip-on:right-8 grid size-10 place-items-center rounded-full border border-line-strong bg-raised/80 text-muted shadow-lg backdrop-blur transition-[opacity,transform,color] duration-200 hover:text-fg",
         show ? "opacity-100" : "pointer-events-none translate-y-2 opacity-0",
       )}
     >

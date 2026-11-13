@@ -3,7 +3,7 @@
 export const SIDEBAR_COOKIE = "elevate-sidebar";
 export const SIDEBAR_EVENT = "elevate:sidebar";
 
-/** Pip, the sidebar companion: "off" hides it. */
+/** Pip, the lookout in the corner (top bar on phones): "off" hides it. */
 export const PIP_COOKIE = "elevate-pip";
 export const PIP_EVENT = "elevate:pip";
 

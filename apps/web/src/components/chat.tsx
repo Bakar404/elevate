@@ -5,6 +5,7 @@ import { useEffect, useRef, useState } from "react";
 import Markdown from "react-markdown";
 import { toast } from "sonner";
 import { cn, send } from "@/lib/utils";
+import { usePipClearance } from "./mascot";
 import { ModelPicker, useModels } from "./model-picker";
 import { Badge, Button, Dialog, ShimmerText } from "./ui";
 
@@ -50,6 +51,8 @@ export function Chat({ threads: initial, demo }: { threads: Thread[]; demo: bool
   const [busy, setBusy] = useState(false);
   const abort = useRef<AbortController | null>(null);
   const end = useRef<HTMLDivElement>(null);
+  const composer = useRef<HTMLFormElement>(null);
+  usePipClearance(composer);
 
   const fresh = useRef<string | null>(null);
   const { data: catalog } = useModels();
@@ -183,7 +186,8 @@ export function Chat({ threads: initial, demo }: { threads: Thread[]; demo: bool
   );
 
   return (
-    <div className="flex h-dvh max-md:h-[calc(100dvh-7.5rem-env(safe-area-inset-top)-env(safe-area-inset-bottom))]">
+    // data-pip-lift: Pip stands on the composer here instead of the page's end (see the app layout's main).
+    <div data-pip-lift className="flex h-dvh max-md:h-[calc(100dvh-7.5rem-env(safe-area-inset-top)-env(safe-area-inset-bottom))]">
       <aside className="flex w-60 shrink-0 flex-col border-r border-line p-3 max-lg:hidden">
         <Button size="sm" className="w-full" onClick={() => setActive(null)}>
           <Plus /> New chat
@@ -274,13 +278,15 @@ export function Chat({ threads: initial, demo }: { threads: Thread[]; demo: bool
                     </div>
                   ),
                 )}
-                <div ref={end} />
+                {/* Tall enough that the corner Pip doesn't sit on the last message when it scrolls into view. */}
+                <div ref={end} className="md:pip-on:h-16" />
               </div>
             )}
           </div>
         </div>
 
         <form
+          ref={composer}
           className="mx-auto w-full max-w-3xl px-4 pb-4 sm:px-6 sm:pb-6"
           onSubmit={(e) => {
             e.preventDefault();

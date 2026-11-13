@@ -47,7 +47,7 @@ By default the PR is yours: when the Copilot coding agent finishes, elevate squa
 
 Repo profiles stay current: every few minutes elevate checks each watched repo, and when the default branch has a new commit it re-profiles the repo at that commit and re-matches it against known techniques.
 
-Pip, a small lookout in the sidebar, dozes when nothing is waiting, perks up when a recommendation is ready and gets busy while a swarm runs. Click it for a one-line status, or hide it from its bubble or ⌘K.
+Pip, a small lookout, floats in the bottom-right corner (in the top bar on phones). It dozes when nothing is waiting, perks up when a recommendation is ready and gets busy while a swarm runs. It also acts out what happens live: it waves hello, looks around, cheers a swarm's win and flinches at a failure. Click it for a one-line status, or hide it from its bubble or ⌘K.
 
 It works on your phone too: below 768px the sidebar becomes a bottom tab bar, chat history opens in a drawer, and every page fits the screen with no sideways scrolling.
 

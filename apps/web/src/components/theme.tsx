@@ -5,6 +5,7 @@ import { useEffect, useState } from "react";
 import { Toaster } from "sonner";
 import { setPrefCookie, THEME_COOKIE, type Theme } from "@/lib/prefs";
 import { cn } from "@/lib/utils";
+import { usePipShown } from "./mascot";
 
 export const THEME_EVENT = "elevate:theme";
 
@@ -64,12 +65,21 @@ export function ThemeToggle({
   );
 }
 
-/** Mounted once at the root, so it also owns the global "toggle theme" event (⌘K). */
+/** Mounted once at the root, so it also owns the global "toggle theme" event (⌘K). On desktop, toasts stack above the corner Pip. */
 export function ThemedToaster() {
   const theme = useTheme();
+  const pip = usePipShown();
   useEffect(() => {
     window.addEventListener(THEME_EVENT, toggleTheme);
     return () => window.removeEventListener(THEME_EVENT, toggleTheme);
   }, []);
-  return <Toaster theme={theme} position="bottom-right" mobileOffset={{ bottom: "calc(5rem + env(safe-area-inset-bottom))" }} toastOptions={{ className: "!bg-panel !border-line-strong !text-fg" }} />;
+  return (
+    <Toaster
+      theme={theme}
+      position="bottom-right"
+      offset={pip ? { bottom: "calc(6rem + var(--pip-lift, 0px))" } : undefined}
+      mobileOffset={{ bottom: "calc(5rem + env(safe-area-inset-bottom))" }}
+      toastOptions={{ className: "!bg-panel !border-line-strong !text-fg" }}
+    />
+  );
 }

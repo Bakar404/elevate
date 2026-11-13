@@ -9,7 +9,6 @@ import { useModKey } from "@/lib/mod-key";
 import { cn } from "@/lib/utils";
 import { setPrefCookie, SIDEBAR_COOKIE, SIDEBAR_EVENT, type LogoVariant } from "@/lib/prefs";
 import { LogoMark } from "./logo";
-import { PipCompanion } from "./mascot";
 import { ThemeToggle } from "./theme";
 import { Badge, Tip } from "./ui";
 
@@ -32,13 +31,11 @@ export function Sidebar({
   counts,
   logo,
   initialCollapsed = false,
-  pipHidden = false,
 }: {
   demo: boolean;
   counts: { open: number; activeSwarms: number };
   logo?: LogoVariant;
   initialCollapsed?: boolean;
-  pipHidden?: boolean;
 }) {
   const pathname = usePathname();
   const mod = useModKey();
@@ -122,7 +119,6 @@ export function Sidebar({
         })}
       </nav>
       <div className="mt-auto flex flex-col gap-1.5">
-        <PipCompanion counts={counts} compact={collapsed} initialHidden={pipHidden} />
         {tip("Toggle theme", <ThemeToggle labelClassName={label} />)}
         {tip(
           `Command ${mod}K`,

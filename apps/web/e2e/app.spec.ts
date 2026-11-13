@@ -357,6 +357,36 @@ test("sources can be managed from the radar, and Pip reports what's waiting", as
   await expect(list.getByText("My feed")).toHaveCount(0);
   await page.keyboard.press("Escape");
 
-  await page.getByTestId("pip").getByRole("button").click();
+  // Pip floats in the bottom-right corner rather than the sidebar.
+  const pip = page.getByTestId("pip");
+  const pipButton = pip.getByRole("button", { name: /^Pip/ });
+  await expect(page.getByTestId("sidebar").getByTestId("pip")).toHaveCount(0);
+  const box = (await pip.boundingBox())!;
+  const view = page.viewportSize()!;
+  expect(view.width - (box.x + box.width)).toBeLessThan(40);
+  expect(view.height - (box.y + box.height)).toBeLessThan(40);
+
+  await pipButton.click();
   await expect(page.getByTestId("pip-bubble")).toContainText(/ready for you/);
+  await page.keyboard.press("Escape");
+  await expect(page.getByTestId("pip-bubble")).toHaveCount(0);
+
+  // A live failure startles it (another event may hold the stage, so keep nudging until it reacts).
+  await expect(async () => {
+    await page.evaluate(() =>
+      window.dispatchEvent(new CustomEvent("elevate:event", { detail: { id: -1, kind: "job.failed", level: "error", message: "x", swarmId: null } })),
+    );
+    await expect(pip.locator("svg.pip")).toHaveAttribute("data-act", "startle", { timeout: 1500 });
+  }).toPass();
+
+  // Hidden from its bubble, it stays hidden after a reload, and ⌘K brings it back.
+  await pipButton.click();
+  await page.getByTestId("pip-bubble").getByRole("button", { name: "Hide Pip" }).click();
+  await expect(pip).toHaveCount(0);
+  await page.reload();
+  await expect(page.locator("html")).toHaveAttribute("data-pip", "off");
+  await expect(pip).toHaveCount(0);
+  await page.keyboard.press("ControlOrMeta+k");
+  await page.getByRole("option", { name: "Show / hide Pip" }).click();
+  await expect(pip).toBeVisible();
 });

@@ -102,6 +102,7 @@ cp .env.example .env            # optional; everything has a default
 pnpm dev                        # http://localhost:3100
 ```
 
+- **Everyday use:** `pnpm build && pnpm start` serves a production build on the same port. `pnpm dev` is for working on elevate itself: it compiles each page on first visit and shows Next.js's dev badge and error overlay. Rebuild after pulling changes; database migrations apply when the server starts.
 - **Real mode:**
   - Sign in to GitHub with `gh auth login`, or paste a token in Settings. The model runs through your Copilot login.
   - Signed in to more than one GitHub account? Set `GITHUB_USER`, or press **Pin to …** in Settings → GitHub. GitHub calls and Copilot usage then stay on that account, even after `gh auth switch`.
@@ -201,7 +202,8 @@ Last live run, on the Copilot default model:
 
 | Command | What it does |
 |---|---|
-| `pnpm dev` | Web app with the embedded worker on :3100 |
+| `pnpm dev` | Web app with the embedded worker on :3100, in development mode |
+| `pnpm build` / `pnpm start` | Build the web app, then serve that build with the embedded worker on :3100 |
 | `pnpm worker` | Standalone worker (set `ELEVATE_EMBEDDED_WORKER=0` on the web app and use Postgres) |
 | `pnpm test` | Unit and integration tests (vitest) |
 | `pnpm test:e2e` | Playwright end-to-end run against the demo |

@@ -1,6 +1,7 @@
 import { claimJob, completeJob, emit, failJob, getSetting, recoverStaleJobs, setSetting, enqueue, type ClaimedJob } from "@elevate/db";
 import { resolveGitHubToken } from "@elevate/github";
 import type { Ctx } from "./context";
+import { classifyTechniques } from "./frontier";
 import { legitimacyGate, soundnessGate } from "./gates";
 import { fetchSourceItems, retryFailedTriage, seedSources, sweepSources, triageItems } from "./ingest";
 import { matchRepo, matchTechnique } from "./matcher";
@@ -24,10 +25,13 @@ export const HANDLERS: Record<string, Handler> = {
     await seedSources(ctx, job.tenantId);
     // Sweep now retries every failed item before it queues this job; a scheduled sweep retries those with tries left.
     if (p.scheduled === true) await retryFailedTriage(ctx, job.tenantId);
+    // Sort any technique that triage didn't (ones recorded before it said whether they're cutting-edge). Free once all are sorted.
+    await enqueue(ctx.db, "techniques.classify", {}, { dedupeKey: `techniques.classify:${job.tenantId}`, tenantId: job.tenantId });
     return sweepSources(ctx, job.tenantId);
   },
   "source.fetch": (ctx, p) => fetchSourceItems(ctx, str(p, "sourceId")),
   "items.triage": (ctx, _p, job) => triageItems(ctx, job.tenantId, undefined, job.dedupeKey),
+  "techniques.classify": (ctx, _p, job) => classifyTechniques(ctx, job.tenantId, job.dedupeKey),
   "technique.legitimacy": (ctx, p) => legitimacyGate(ctx, str(p, "techniqueId")),
   "technique.match": (ctx, p) => matchTechnique(ctx, str(p, "techniqueId")),
   "recommendation.soundness": (ctx, p) => soundnessGate(ctx, str(p, "recommendationId")),

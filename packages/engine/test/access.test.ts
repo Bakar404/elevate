@@ -1,5 +1,5 @@
 import { HashingEmbedder } from "@elevate/agent";
-import { createDb, sources } from "@elevate/db";
+import { createDb, items, sources } from "@elevate/db";
 import { FakeGitHub } from "@elevate/executors";
 import { detectEcosystems, findModels, inferTags, judgeAccess, parseFeed, sourceEcosystem, defaultSources, type Access } from "@elevate/sources";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
@@ -17,6 +17,7 @@ import {
   recheckAccess,
   removeSource,
   seedDemo,
+  seedSources,
   setAccessOverrides,
   sweepSources,
   type Ctx,
@@ -175,5 +176,27 @@ describe("in the pipeline", () => {
 
     await expect(removeSource(ctx, listed.find((s) => s.name === "Codex releases")!.id)).rejects.toThrow(/Built-in/);
     expect(await removeSource(ctx, src.id)).toEqual({ removed: true });
+  });
+
+  it("adds each built-in source once, and merges the copies earlier versions added on every sweep", async () => {
+    const live: Ctx = { ...ctx, demo: false };
+    const hn = async () => (await listSources(ctx)).filter((s) => s.name === "Hacker News (100+ points)");
+    await seedSources(live);
+    expect(await seedSources(live)).toBe(0);
+    const [first, ...none] = await hn();
+    expect(none).toHaveLength(0);
+
+    // What an earlier version left behind: the same query stamped with another time window, holding a story of its own, switched off.
+    const [copy] = await ctx.db
+      .insert(sources)
+      .values({ tenantId: "local", kind: "hn", name: first!.name, url: first!.url.replace(/created_at_i>\d+/, "created_at_i>1"), credibility: 45, enabled: false })
+      .returning();
+    await ctx.db.insert(items).values({ tenantId: "local", sourceId: copy!.id, url: "https://example.com/story-from-a-copy", title: "A story the copy fetched" });
+    expect(await seedSources(live)).toBe(0);
+    const merged = await hn();
+    expect(merged.map((s) => s.id)).toEqual([first!.id]);
+    expect(merged[0]).toMatchObject({ enabled: false, items: first!.items + 1, builtIn: true });
+    // A fetch queued for the copy before it was merged has nothing left to do.
+    expect(await fetchSourceItems(live, copy!.id)).toBe(0);
   });
 });

@@ -1,6 +1,7 @@
 "use client";
 
-import { Ban, ExternalLink, History, Radar as RadarIcon, Search, X } from "lucide-react";
+import { Ban, ExternalLink, History, Radar as RadarIcon, Search, Wrench, X } from "lucide-react";
+import Link from "next/link";
 import { useMemo, useState } from "react";
 import { RepoChips } from "@/components/discovery";
 import { Badge, Card, Empty, ScoreRing } from "@/components/ui";
@@ -18,6 +19,8 @@ export type TechniqueRow = {
   foundFor: string[];
   matches: number;
   access: { requires: { id: string; label: string }[]; models: string[]; usable: boolean; kind: string | null; reason: string | null };
+  /** False for routine upkeep (patch releases, deprecations, database tips) rather than a new technique. */
+  cuttingEdge: boolean;
 };
 
 const SORTS = {
@@ -39,8 +42,21 @@ export function AccessBadge({ access }: { access: Pick<TechniqueRow["access"], "
   );
 }
 
-/** The Radar's technique cards with a search box, category chips and a sort, all filtered in the browser. */
-export function TechniqueList({ techniques, emptyTitle = "Nothing here yet", emptyHint }: { techniques: TechniqueRow[]; emptyTitle?: string; emptyHint?: string }) {
+/**
+ * The Radar's technique cards with a search box, category chips and a sort, all filtered in the browser.
+ * `routineHeld` says routine upkeep in the list is kept out of recommendations (Settings → Cutting-edge only).
+ */
+export function TechniqueList({
+  techniques,
+  emptyTitle = "Nothing here yet",
+  emptyHint,
+  routineHeld = false,
+}: {
+  techniques: TechniqueRow[];
+  emptyTitle?: string;
+  emptyHint?: string;
+  routineHeld?: boolean;
+}) {
   const [q, setQ] = useState("");
   const [category, setCategory] = useState<string | null>(null);
   const [sort, setSort] = useState<Sort>("relevant");
@@ -151,17 +167,22 @@ export function TechniqueList({ techniques, emptyTitle = "Nothing here yet", emp
         {shown.map((t) => (
           <Card key={t.id} className="cv-auto p-5" data-testid="technique">
             <div className="flex gap-4">
-              {t.access.usable ? (
+              {t.access.usable && (t.legitimacy || t.cuttingEdge) ? (
                 <ScoreRing value={t.legitimacy?.score} tone={scoreTone(t.legitimacy?.score, t.legitimacy?.passed)} label="legitimacy" />
               ) : (
                 <div className="grid size-11 shrink-0 place-items-center rounded-full border border-dashed border-line-strong text-faint" aria-hidden>
-                  {t.access.kind === "superseded" ? <History className="size-4" /> : <Ban className="size-4" />}
+                  {!t.access.usable ? t.access.kind === "superseded" ? <History className="size-4" /> : <Ban className="size-4" /> : <Wrench className="size-4" />}
                 </div>
               )}
               <div className="min-w-0 flex-1">
                 <div className="flex flex-wrap items-center gap-2">
                   <h3 className="font-medium">{t.name}</h3>
                   <Badge>{t.category}</Badge>
+                  {!t.cuttingEdge && (
+                    <Badge title="Routine upkeep rather than a new technique">
+                      <Wrench /> routine
+                    </Badge>
+                  )}
                   {t.access.requires.map((r) => (
                     <Badge key={r.id} tone={t.access.usable ? "sky" : "neutral"} title={`Only useful with ${r.label}`}>
                       {r.label}
@@ -178,6 +199,13 @@ export function TechniqueList({ techniques, emptyTitle = "Nothing here yet", emp
                 {t.access.reason ? (
                   <p className="mt-2 text-xs text-sand" data-testid="access-reason">
                     {t.access.reason}.
+                  </p>
+                ) : routineHeld && !t.cuttingEdge ? (
+                  <p className="mt-2 text-xs text-faint" data-testid="routine-reason">
+                    Routine upkeep, so it isn&apos;t turned into recommendations while you want cutting-edge ideas only.{" "}
+                    <Link href="/settings#recommendations" className="underline decoration-line-strong underline-offset-4 hover:text-fg">
+                      Change that
+                    </Link>
                   </p>
                 ) : (
                   t.legitimacy?.verdict && <p className="mt-2 text-xs text-faint">{t.legitimacy.verdict}</p>

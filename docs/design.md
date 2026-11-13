@@ -92,5 +92,7 @@ A calm, dark work surface over a living, dithered landscape. The background carr
 ## Interaction
 
 - Every action is reachable from ⌘K, and every destructive or writing action asks for confirmation. Approving a recommendation shows exactly which repo, which executor and which budget.
+- Votes are the exception: a 👍 or 👎 on a recommendation applies at once, because it is undone as easily. The toast has **Undo**, and clicking the pressed vote takes it back. A dislike moves the card to Filtered out, whose badge gives the reason (disliked, routine upkeep, or "you usually pass on these"). Forgetting every vote in Settings asks first.
+- Ready for review is ordered by the learner, not by date. A card shows "N% your kind" once there are votes, with what moved it in the badge's title, and the recommendation page says the same in a line under the title.
 - Gate results are shown as evidence, not just scores: each gate card lists its reasons, cited links and the threshold it was held to.
 - Live state arrives over SSE, with no manual refresh. Swarm timelines stream in place.

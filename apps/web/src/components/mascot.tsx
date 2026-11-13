@@ -29,10 +29,13 @@ const IDLE: Record<PipMood, readonly PipAct[]> = {
 /** How Pip answers a live engine event, as [act, rank]: it flinches at failures, celebrates wins and glances at warnings. */
 function reaction(kind: string, level: string): [PipAct, number] | null {
   if (level === "error") return ["startle", 3];
-  if (level === "success") return [kind === "swarm.pr" || kind === "swarm.log" || kind === "demo.seeded" ? "cheer" : kind === "gate.soundness" ? "surprise" : "hop", 2];
+  if (level === "success") return [kind === "swarm.pr" || kind === "swarm.log" || kind === "demo.seeded" || kind === "feedback.recorded" ? "cheer" : kind === "gate.soundness" ? "surprise" : "hop", 2];
   if (level === "warn") return ["look", 1];
   if (kind === "source.fetched" || kind === "technique.matched") return ["scan", 1];
   if (kind === "swarm.queued") return ["hop", 1];
+  // A dislike (or a vote taken back) is noted with a glance; forgetting every vote is a fresh spin.
+  if (kind === "feedback.recorded") return ["look", 1];
+  if (kind === "learner.reset") return ["spin", 1];
   return null;
 }
 

@@ -1,5 +1,5 @@
 import { cosine, isContentFiltered } from "@elevate/agent";
-import { and, desc, emit, enqueue, eq, inArray, items, lt, repos, sources, sql, techniques, type ItemSignals } from "@elevate/db";
+import { and, asc, desc, emit, enqueue, eq, inArray, items, lt, repos, sources, sql, techniques, type ItemSignals } from "@elevate/db";
 import {
   buildFocusQueries,
   compareVersions,
@@ -10,6 +10,7 @@ import {
   focusBackend,
   parseFocusResponse,
   refreshSourceUrl,
+  sourceKey,
   type FocusBackend,
   type Fetcher,
   ECOSYSTEM_LABEL,
@@ -20,18 +21,39 @@ import {
 } from "@elevate/sources";
 import { accessProfile, resetAccessCache, verdictFor } from "./access";
 import type { Ctx } from "./context";
+import { cuttingEdgeOnly, isCuttingEdge } from "./frontier";
 import { TRIAGE_SYSTEM, TriageSchema } from "./prompts";
 
 export async function seedSources(ctx: Ctx, tenantId = "local") {
+  const existing = await ctx.db
+    .select({ id: sources.id, url: sources.url, enabled: sources.enabled })
+    .from(sources)
+    .where(eq(sources.tenantId, tenantId))
+    .orderBy(asc(sources.createdAt));
   // Demo workspaces are offline: keep their seeded sources only.
-  if (ctx.demo) {
-    const existing = await ctx.db.select({ id: sources.id }).from(sources).where(eq(sources.tenantId, tenantId)).limit(1);
-    if (existing.length) return 0;
+  if (ctx.demo && existing.length) return 0;
+  const defaults = defaultSources();
+  const builtIn = new Set(defaults.map((d) => sourceKey(d.url)));
+  const stored = new Map<string, typeof existing>();
+  for (const s of existing) {
+    const key = sourceKey(s.url);
+    if (builtIn.has(key)) stored.set(key, [...(stored.get(key) ?? []), s]);
   }
-  // Insert any default the workspace doesn't have yet (by URL), so new built-in sources reach existing users.
+  // Earlier versions matched built-ins by exact URL, so the time-stamped HN one was added again on every sweep.
+  // Merge those copies into the first: items move before the copies go (deleting a source deletes its items), and off stays off.
+  for (const [first, ...copies] of stored.values()) {
+    if (!copies.length) continue;
+    const ids = copies.map((c) => c.id);
+    await ctx.db.update(items).set({ sourceId: first!.id }).where(inArray(items.sourceId, ids));
+    if (copies.some((c) => !c.enabled)) await ctx.db.update(sources).set({ enabled: false }).where(eq(sources.id, first!.id));
+    await ctx.db.delete(sources).where(inArray(sources.id, ids));
+  }
+  // Insert any default the workspace doesn't have yet, so new built-in sources reach existing users.
+  const missing = defaults.filter((d) => !stored.has(sourceKey(d.url)));
+  if (!missing.length) return 0;
   const added = await ctx.db
     .insert(sources)
-    .values(defaultSources().map((d) => ({ ...d, tenantId, config: d.config ?? {} })))
+    .values(missing.map((d) => ({ ...d, tenantId, config: d.config ?? {} })))
     .onConflictDoNothing()
     .returning({ id: sources.id });
   return added.length;
@@ -54,7 +76,8 @@ export async function sweepSources(ctx: Ctx, tenantId = "local") {
 
 export async function fetchSourceItems(ctx: Ctx, sourceId: string) {
   const [src] = await ctx.db.select().from(sources).where(eq(sources.id, sourceId));
-  if (!src) throw new Error(`Source ${sourceId} not found`);
+  // Gone since this fetch was queued (the user removed it, or it was a duplicate merged into the first): nothing to fetch.
+  if (!src) return 0;
   try {
     const backend = focusBackend(src.url);
     const raw = backend ? await fetchFocusedItems(ctx, src.tenantId, backend) : await fetchSource({ ...src, url: refreshSourceUrl(src) }, ctx.fetcher);
@@ -244,9 +267,11 @@ export async function triageItems(ctx: Ctx, tenantId = "local", maxItems = 45, c
     .filter(Boolean)
     .join("\n");
   const held: string[] = [];
+  const routine: string[] = [];
+  const onlyCuttingEdge = await cuttingEdgeOnly(ctx);
 
   const known = await ctx.db
-    .select({ id: techniques.id, slug: techniques.slug, embedding: techniques.embedding })
+    .select({ id: techniques.id, slug: techniques.slug, embedding: techniques.embedding, name: techniques.name, summary: techniques.summary, frontier: techniques.frontier })
     .from(techniques)
     .where(eq(techniques.tenantId, tenantId));
   const created: string[] = [];
@@ -312,17 +337,17 @@ export async function triageItems(ctx: Ctx, tenantId = "local", maxItems = 45, c
       const [embedding] = await ctx.embedder.embed([text]);
       const slug = slugify(t.name);
 
-      let best: { id: string; sim: number } | undefined;
+      let best: { id: string; sim: number; routine: boolean } | undefined;
       for (const k of known) {
         const sim = k.slug === slug ? 1 : k.embedding ? cosine(embedding!, k.embedding) : 0;
-        if (!best || sim > best.sim) best = { id: k.id, sim };
+        if (!best || sim > best.sim) best = { id: k.id, sim, routine: !isCuttingEdge(k) };
       }
 
       let techniqueId: string;
       if (best && best.sim >= CLUSTER_THRESHOLD) {
         techniqueId = best.id;
-        // Extra corroboration can flip a previously failed legitimacy verdict.
-        if (!created.includes(best.id)) {
+        // Extra corroboration can flip a previously failed legitimacy verdict (routine upkeep isn't up for one).
+        if (!created.includes(best.id) && !(onlyCuttingEdge && best.routine)) {
           await enqueue(ctx.db, "technique.legitimacy", { techniqueId }, { dedupeKey: `technique.legitimacy:${techniqueId}` });
         }
       } else {
@@ -347,6 +372,7 @@ export async function triageItems(ctx: Ctx, tenantId = "local", maxItems = 45, c
             },
             embedding,
             novelty,
+            frontier: t.frontier,
           })
           .onConflictDoNothing()
           .returning({ id: techniques.id });
@@ -359,7 +385,7 @@ export async function triageItems(ctx: Ctx, tenantId = "local", maxItems = 45, c
         } else {
           techniqueId = row.id;
           created.push(row.id);
-          known.push({ id: row.id, slug, embedding: embedding! });
+          known.push({ id: row.id, slug, embedding: embedding!, name: t.name, summary: t.summary, frontier: t.frontier });
         }
       }
       await ctx.db
@@ -380,10 +406,22 @@ export async function triageItems(ctx: Ctx, tenantId = "local", maxItems = 45, c
       held.push(`${t!.name} (${verdict.reason})`);
       continue;
     }
+    // Only cutting-edge techniques become recommendations; routine upkeep stays on the Radar without a review.
+    if (onlyCuttingEdge && t && !isCuttingEdge(t)) {
+      routine.push(t.name);
+      continue;
+    }
     await enqueue(ctx.db, "technique.legitimacy", { techniqueId: id }, { dedupeKey: `technique.legitimacy:${id}` });
   }
   if (held.length) {
     await emit(ctx.db, { kind: "techniques.held", message: `Set aside ${held.length} that ${held.length === 1 ? "doesn't" : "don't"} fit your setup: ${held.slice(0, 3).join("; ")}${held.length > 3 ? "…" : ""}` });
+  }
+  if (routine.length) {
+    await emit(ctx.db, {
+      kind: "techniques.routine",
+      message: `Kept ${routine.length} routine upkeep on the Radar instead of recommending ${routine.length === 1 ? "it" : "them"}: ${routine.slice(0, 3).join("; ")}${routine.length > 3 ? "…" : ""}`,
+      tenantId,
+    });
   }
   if (created.length) {
     await emit(ctx.db, {

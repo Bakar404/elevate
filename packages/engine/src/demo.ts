@@ -112,6 +112,14 @@ const DEMO_ITEMS = [
     points: 90,
   },
   { source: "demo://hn", title: "Startup raises $50M Series B for AI note-taking", url: "https://example.com/funding", content: "Funding news.", points: 120 },
+  // Routine upkeep: kept on the Radar, never recommended while only cutting-edge ideas are (the default).
+  {
+    source: "demo://hn",
+    title: "Postgres 17.6 security release: bump pinned images to patch CVE-2026-2104",
+    url: "https://example.com/postgres-17-6",
+    content: "A minor release that fixes a security bug in logical replication. Pin the new image and restart.",
+    points: 140,
+  },
 ];
 
 /** Seed an offline demo: three repos, a handful of sources and items, then let the pipeline run. */

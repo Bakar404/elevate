@@ -1,11 +1,11 @@
 "use client";
 
-import { KeyRound, Plug, SlidersHorizontal } from "lucide-react";
+import { KeyRound, Plug, RotateCcw, SlidersHorizontal, ThumbsUp } from "lucide-react";
 import { useEffect, useState, type ReactNode } from "react";
 import { toast } from "sonner";
 import { EXECUTORS, cn, send } from "@/lib/utils";
 import { ModelPicker, useModels } from "./model-picker";
-import { Badge, Button, Card } from "./ui";
+import { Badge, Button, Card, Dialog } from "./ui";
 
 type Settings = {
   demo: boolean;
@@ -19,6 +19,8 @@ type Settings = {
   budget: { maxTasks: number; maxMinutes: number; maxAgentTurns: number };
   publishAsMe: boolean;
   autoMerge: boolean;
+  /** What the ranking has learned from votes and decisions, and whether routine upkeep is kept out. */
+  learner: { likes: number; dislikes: number; decisions: number; toward: string[]; away: string[]; cuttingEdgeOnly: boolean };
   access: {
     provider: string;
     listed: boolean;
@@ -40,6 +42,7 @@ export function SettingsForm() {
   const [s, setS] = useState<Settings | null>(null);
   const [apiKey, setApiKey] = useState("");
   const [ghToken, setGhToken] = useState("");
+  const [confirmForget, setConfirmForget] = useState(false);
   const { data: catalog, refresh: refreshModels } = useModels();
 
   const load = () =>
@@ -220,6 +223,75 @@ export function SettingsForm() {
         </div>
       </Card>
 
+      <Card className="scroll-mt-6 p-6" id="recommendations" data-testid="learner-card">
+        <div className="flex items-center gap-2">
+          <ThumbsUp className="size-4" />
+          <h2 className="font-medium">Recommendations</h2>
+        </div>
+        <p className="mt-1 text-sm text-muted text-pretty">
+          elevate learns what you want from your likes and dislikes, and at half weight from what you approve or reject. Ready for review is ordered by how
+          likely you are to like each idea, ideas it&apos;s unsure about still get a turn, and kinds you keep passing on move to Filtered out.
+        </p>
+        <div className="mt-4 grid gap-3 sm:grid-cols-3">
+          <SettingSwitch
+            id="cutting-edge-only"
+            title="Cutting-edge only"
+            checked={s.learner.cuttingEdgeOnly}
+            onChange={(cuttingEdgeOnly) => {
+              setS({ ...s, learner: { ...s.learner, cuttingEdgeOnly } });
+              void save({ cuttingEdgeOnly }, cuttingEdgeOnly ? "Only cutting-edge ideas will be recommended" : "Routine upkeep can be recommended again");
+            }}
+          >
+            Recommend new techniques: AI models and methods, agent patterns, recent research. Routine upkeep (patch releases, version bumps, deprecations,
+            database and config tips) stays on the Radar under Routine upkeep.
+          </SettingSwitch>
+          <LearnerSummary learner={s.learner} />
+        </div>
+        <div className="mt-4 flex flex-wrap items-center justify-between gap-3 text-xs text-faint">
+          <p className="min-w-0 text-pretty">
+            Method: a Bayesian logistic-regression contextual bandit ranked by Bayes-UCB (Chapelle &amp; Li, 2011; Kaufmann et al., 2012), the same
+            construction as LogisticUCB in{" "}
+            <a href="https://github.com/david-cortes/contextualbandits" target="_blank" rel="noreferrer" className="underline decoration-line-strong underline-offset-4 hover:text-fg">
+              contextualbandits
+            </a>
+            .
+          </p>
+          <Button
+            size="sm"
+            variant="ghost"
+            data-testid="learner-reset"
+            disabled={s.learner.likes + s.learner.dislikes + s.learner.decisions === 0}
+            onClick={() => setConfirmForget(true)}
+          >
+            Forget what it learned
+          </Button>
+        </div>
+        <Dialog
+          open={confirmForget}
+          onOpenChange={setConfirmForget}
+          title="Forget what elevate learned?"
+          description="Your likes and dislikes are cleared and earlier approvals and rejections stop counting, so recommendations are ranked from scratch and ones you disliked go back to Ready for review. This can't be undone."
+        >
+          <div className="flex justify-end gap-2">
+            <Button size="sm" variant="ghost" onClick={() => setConfirmForget(false)}>
+              Cancel
+            </Button>
+            <Button
+              size="sm"
+              variant="danger"
+              data-testid="confirm-forget"
+              onClick={() => {
+                setConfirmForget(false);
+                const done = send("/api/learner", {}, "DELETE").then(load);
+                toast.promise(done, { loading: "Forgetting…", success: "Votes cleared: recommendations are ranked from scratch", error: (e: Error) => e.message });
+              }}
+            >
+              <RotateCcw /> Forget
+            </Button>
+          </div>
+        </Dialog>
+      </Card>
+
       <Card className="p-6">
         <div className="flex items-center gap-2">
           <Plug className="size-4" />
@@ -363,6 +435,41 @@ export function SettingsForm() {
           </Button>
         </div>
       </Card>
+    </div>
+  );
+}
+
+/** What the ranking has picked up from votes and decisions so far, in words. */
+function LearnerSummary({ learner: l }: { learner: Settings["learner"] }) {
+  const plural = (n: number, one: string) => `${n} ${one}${n === 1 ? "" : "s"}`;
+  const total = l.likes + l.dislikes + l.decisions;
+  return (
+    <div className="rounded-lg border border-line bg-bg/40 p-3 sm:col-span-3" data-testid="learner-summary">
+      <p className="text-sm text-fg">
+        {total
+          ? `Learned from ${plural(l.likes, "like")}, ${plural(l.dislikes, "dislike")} and ${l.decisions} ${l.decisions === 1 ? "approval or rejection" : "approvals or rejections"}.`
+          : "Nothing learned yet."}
+      </p>
+      {total > 0 && (l.toward.length > 0 || l.away.length > 0) ? (
+        <dl className="mt-2 grid gap-1 text-xs">
+          {l.toward.length > 0 && (
+            <div className="flex flex-wrap gap-x-2">
+              <dt className="text-faint">Moves up</dt>
+              <dd className="text-muted">{l.toward.join(", ")}</dd>
+            </div>
+          )}
+          {l.away.length > 0 && (
+            <div className="flex flex-wrap gap-x-2">
+              <dt className="text-faint">Moves down</dt>
+              <dd className="text-muted">{l.away.join(", ")}</dd>
+            </div>
+          )}
+        </dl>
+      ) : (
+        <p className="mt-0.5 text-xs text-muted">
+          {total ? "No clear pattern yet; a few more votes will show one." : "Use the thumbs on a recommendation and the order adapts. One vote nudges it; a consistent pattern decides."}
+        </p>
+      )}
     </div>
   );
 }

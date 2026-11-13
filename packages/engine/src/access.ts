@@ -14,6 +14,7 @@ import {
 import type { ModelOption } from "@elevate/agent";
 import type { Ctx } from "./context";
 import { resolveModelConfig } from "./context";
+import { cuttingEdgeOnly, isCuttingEdge } from "./frontier";
 import { availableModels } from "./models";
 
 export type AccessOverrides = Partial<Record<Ecosystem, boolean>>;
@@ -142,17 +143,19 @@ export function accessView(t: Taggable, access: Access) {
 }
 
 /**
- * After the user's access changes, pick up what was held back: techniques that were never checked
- * go to Gate 1, and ones that already passed are matched against the repos.
+ * After the user's access or the cutting-edge setting changes, pick up what was held back: techniques
+ * that were never checked go to Gate 1, and ones that already passed are matched against the repos.
  */
 export async function recheckAccess(ctx: Ctx, tenantId = "local") {
   resetAccessCache(ctx);
   const access = await accessProfile(ctx);
+  const onlyCuttingEdge = await cuttingEdgeOnly(ctx);
   const rows = await ctx.db.select().from(techniques).where(eq(techniques.tenantId, tenantId));
   const matched = new Set((await ctx.db.select({ id: recommendations.techniqueId }).from(recommendations)).map((r) => r.id));
   let queued = 0;
   for (const t of rows) {
     if (!verdictFor(t, access).usable) continue;
+    if (onlyCuttingEdge && !isCuttingEdge(t)) continue;
     if (!t.legitimacy) {
       await enqueue(ctx.db, "technique.legitimacy", { techniqueId: t.id }, { dedupeKey: `technique.legitimacy:${t.id}` });
       queued++;

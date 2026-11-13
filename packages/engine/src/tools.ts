@@ -5,6 +5,8 @@ import { z } from "zod";
 import { ECOSYSTEM_LABEL } from "@elevate/sources";
 import { accessProfile, accessView } from "./access";
 import type { Ctx } from "./context";
+import { cuttingEdgeOnly, isCuttingEdge } from "./frontier";
+import { listRecommendations } from "./views";
 
 const clip = (s: string, n = 6000) => (s.length > n ? `${s.slice(0, n)}\n…(truncated)` : s);
 
@@ -75,7 +77,8 @@ export function chatTools(ctx: Ctx): ToolSpec[] {
     }),
     tool({
       name: "search_radar",
-      description: "Search techniques discovered from Hacker News, AI labs and papers, with their legitimacy verdicts.",
+      description:
+        "Search techniques discovered from Hacker News, AI labs and papers, with their legitimacy verdicts. cuttingEdge: false marks routine upkeep (patch releases, deprecations, database tips), which isn't recommended while the user wants cutting-edge ideas only.",
       parameters: z.object({ query: z.string(), limit: z.number().int().min(1).max(20).optional() }),
       handler: async ({ query, limit }) => {
         const [q] = await ctx.embedder.embed([query]);
@@ -91,6 +94,7 @@ export function chatTools(ctx: Ctx): ToolSpec[] {
             category: t.category,
             summary: t.summary,
             legitimacy: t.legitimacy ? { passed: t.legitimacy.passed, score: t.legitimacy.score, verdict: t.legitimacy.verdict } : "not checked yet",
+            cuttingEdge: isCuttingEdge(t),
             evidence: t.claims.evidenceLinks.slice(0, 3),
             // Say so when the user can't act on it, so the answer doesn't recommend it.
             usableByUser: accessView(t, access).reason ?? true,
@@ -99,20 +103,24 @@ export function chatTools(ctx: Ctx): ToolSpec[] {
     }),
     tool({
       name: "list_recommendations",
-      description: "List recommendations. Status 'open' is the inbox (passed both gates, awaiting the user's decision).",
+      description:
+        "List recommendations, best first for this user. Status 'open' is the inbox (passed both gates, awaiting the user's decision); open ones with heldBack set are filtered out of it (disliked, routine upkeep, or the kind of idea the user usually passes on), so don't push those. vote is the user's like or dislike.",
       parameters: z.object({
         status: z.enum(["candidate", "gated_out", "open", "approved", "rejected", "in_progress", "pr_opened", "merged", "closed", "failed"]).optional(),
       }),
       handler: async ({ status }) => {
-        const rows = await ctx.db
-          .select({ id: recommendations.id, title: recommendations.title, status: recommendations.status, score: recommendations.score, repo: repos.fullName })
-          .from(recommendations)
-          .innerJoin(repos, eq(recommendations.repoId, repos.id))
-          // Same as the inbox: repos the user turned off are left out.
-          .where(and(eq(repos.watch, true), status ? eq(recommendations.status, status) : undefined))
-          .orderBy(desc(recommendations.score))
-          .limit(30);
-        return rows;
+        // Same as the inbox: repos the user turned off are left out, and what the user would like comes first.
+        const rows = await listRecommendations(ctx, status);
+        return [...rows.filter((r) => !r.held), ...rows.filter((r) => r.held)].slice(0, 30).map((r) => ({
+          id: r.id,
+          title: r.title,
+          status: r.status,
+          score: r.score,
+          repo: r.repo,
+          heldBack: r.held?.reason ?? null,
+          vote: r.feedback === 1 ? "liked" : r.feedback === -1 ? "disliked" : null,
+          likelyToLike: r.fit == null ? null : Math.round(r.fit * 100) / 100,
+        }));
       },
     }),
     tool({
@@ -152,6 +160,8 @@ export function chatTools(ctx: Ctx): ToolSpec[] {
         );
         if (!t) return `Unknown technique "${a.technique}". Use search_radar first.`;
         if (!t.legitimacy?.passed) return `"${t.name}" has not passed the legitimacy gate, so nothing can be proposed from it.`;
+        if ((await cuttingEdgeOnly(ctx)) && !isCuttingEdge(t))
+          return `"${t.name}" is routine upkeep and the user asked for cutting-edge ideas only (Settings → Recommendations), so nothing is proposed from it.`;
         const [row] = await ctx.db
           .insert(recommendations)
           .values({

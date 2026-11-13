@@ -14,13 +14,19 @@ import {
   discoveryFeed,
   drain,
   LifecycleError,
+  learnerSummary,
   listSwarms,
   mergeSwarmPr,
   planToTasks,
   prNextStep,
+  recheckAccess,
   regateRecommendation,
   rejectRecommendation,
+  resetLearner,
+  ROUTINE_REASON,
   seedDemo,
+  setCuttingEdgeOnly,
+  setFeedback,
   stats,
   chat,
   createThread,
@@ -213,6 +219,48 @@ describe("read models and chat", () => {
     const msgs = await threadMessages(ctx, thread.id);
     expect(msgs.map((m) => m.role)).toEqual(["user", "assistant"]);
     expect(msgs[1]?.toolCalls[0]?.name).toBe("list_recommendations");
+  });
+});
+
+describe("likes, dislikes and the learner", () => {
+  const shownOpen = async (id: string) => (await listRecommendations(ctx, "open")).find((r) => r.id === id)!;
+
+  it("a dislike moves a recommendation to Filtered out without changing its status; a like keeps it ready; clearing undoes both", async () => {
+    const [r] = (await listRecommendations(ctx, "open")).filter((x) => !x.held);
+    expect(r, "demo should leave an open recommendation").toBeDefined();
+    if (!r) return;
+    const before = await stats(ctx);
+
+    await setFeedback(ctx, r.id, "dislike");
+    expect(await shownOpen(r.id)).toMatchObject({ status: "open", feedback: -1, held: { kind: "disliked", reason: "You disliked this" } });
+    expect((await stats(ctx)).open).toBe(before.open - 1);
+    expect((await recById(r.id)).status).toBe("open");
+
+    await setFeedback(ctx, r.id, "like");
+    expect(await shownOpen(r.id)).toMatchObject({ feedback: 1, held: null, fit: expect.any(Number) });
+
+    await setFeedback(ctx, r.id, "none");
+    expect(await shownOpen(r.id)).toMatchObject({ feedback: null, held: null });
+    expect(await stats(ctx)).toEqual(before);
+
+    const audits = await ctx.db.select().from(auditLog).where(eq(auditLog.action, "recommendation.feedback"));
+    expect(audits.filter((a) => a.target === r.id).map((a) => a.details?.vote)).toEqual(["dislike", "like", "none"]);
+    await expect(setFeedback(ctx, "00000000-0000-0000-0000-000000000000", "like")).rejects.toBeInstanceOf(LifecycleError);
+  });
+
+  it("learns from votes and decisions, says what it learned, and forgets it all on reset", async () => {
+    const all = await listRecommendations(ctx);
+    const liked = all.find((r) => r.status === "open")!;
+    const disliked = all.find((r) => r.id !== liked.id && r.status !== "pr_opened")!;
+    await setFeedback(ctx, liked.id, "like");
+    await setFeedback(ctx, disliked.id, "dislike");
+    // Votes count whatever the status, and the approval earlier in this file counts as a weaker like.
+    expect(await learnerSummary(ctx)).toMatchObject({ likes: 1, dislikes: 1, decisions: 1, cuttingEdgeOnly: true });
+
+    expect(await resetLearner(ctx)).toEqual({ cleared: 2 });
+    expect(await learnerSummary(ctx)).toMatchObject({ likes: 0, dislikes: 0, decisions: 0, toward: [], away: [] });
+    const after = await listRecommendations(ctx);
+    expect(after.every((r) => r.feedback === null && r.held === null && r.fit === null)).toBe(true);
   });
 });
 
@@ -526,5 +574,48 @@ describe("triage that fails", () => {
     expect(rows.find((r) => r.status === "error")?.lastError).toMatch(/content filter/);
     // The batch of 4, its halves, then the halves of the half that was blocked.
     expect(calls).toBe(5);
+  });
+});
+
+describe("only cutting-edge ideas (the default)", () => {
+  const routineTech = async () => (await ctx.db.select().from(techniques)).find((t) => /^Postgres 17\.6/.test(t.name))!;
+
+  it("a technique recorded before triage judged it is sorted by the job after the next sweep", async () => {
+    const pg = await routineTech();
+    const [frontier] = await ctx.db.select().from(techniques).where(eq(techniques.frontier, true)).limit(1);
+    await ctx.db.update(techniques).set({ frontier: null }).where(inArray(techniques.id, [pg.id, frontier!.id]));
+    await enqueue(ctx.db, "techniques.classify", {});
+    await drain(ctx);
+    const after = await ctx.db.select({ id: techniques.id, frontier: techniques.frontier }).from(techniques).where(inArray(techniques.id, [pg.id, frontier!.id]));
+    expect(Object.fromEntries(after.map((t) => [t.id, t.frontier]))).toEqual({ [pg.id]: false, [frontier!.id]: true });
+  });
+
+  it("keeps routine upkeep on the Radar without a review, and holds back any recommendation for it unless you liked it", async () => {
+    const pg = await routineTech();
+    expect(pg).toMatchObject({ frontier: false, legitimacy: null });
+    expect((await recs()).some((r) => r.rec.techniqueId === pg.id)).toBe(false);
+    expect((await radar(ctx)).find((t) => t.id === pg.id)?.cuttingEdge).toBe(false);
+
+    // One made while the filter was off: a copy of one that passed Gate 2, for the routine technique.
+    const src = (await ctx.db.select().from(recommendations)).find((r) => r.gate2?.passed)!;
+    const { id: _r, ...r } = src;
+    const [rec] = await ctx.db.insert(recommendations).values({ ...r, techniqueId: pg.id, status: "open", history: ["gate_pass"], decidedAt: null, feedback: null }).returning();
+    const held = async () => (await listRecommendations(ctx, "open")).find((x) => x.id === rec!.id)!.held;
+    try {
+      expect(await held()).toEqual({ kind: "routine", reason: ROUTINE_REASON });
+      await setFeedback(ctx, rec!.id, "like");
+      expect(await held()).toBeNull();
+      await setFeedback(ctx, rec!.id, "none");
+
+      await setCuttingEdgeOnly(ctx, false);
+      expect(await held()).toBeNull();
+      // Turned off, routine techniques get the review they skipped.
+      expect(await recheckAccess(ctx)).toBeGreaterThan(0);
+      await drain(ctx);
+      expect((await routineTech()).legitimacy).not.toBeNull();
+    } finally {
+      await setCuttingEdgeOnly(ctx, true);
+      await ctx.db.delete(recommendations).where(eq(recommendations.id, rec!.id));
+    }
   });
 });

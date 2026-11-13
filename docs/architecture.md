@@ -20,8 +20,8 @@ proof/           intent, Verus spec and proof, mutation check, receipt
 Every table has a `tenant_id`, which is `local` for now.
 
 - `repos`: GitHub metadata, the profile written by the model (stack, domains, key modules, test setup, improvement surfaces), and an embedding.
-- `sources`, `items`, `techniques`: what came in, and the techniques extracted from it. Each technique carries its claims, its Gate 1 result and an embedding.
-- `recommendations`: a technique × repo pair with a change hypothesis, both gate results, a score, and `status` plus an append-only `history` of lifecycle events.
+- `sources`, `items`, `techniques`: what came in, and the techniques extracted from it. Each technique carries its claims, its Gate 1 result, an embedding, and `frontier`: whether it is cutting-edge rather than routine upkeep (null until classified).
+- `recommendations`: a technique × repo pair with a change hypothesis, both gate results, a score, `status` plus an append-only `history` of lifecycle events, and the user's vote (`feedback`: 1, -1 or null, with `feedback_at`).
 - `swarms`, `swarm_tasks`: the task DAG, the executor, the budget, usage and the PR link.
 - `jobs`: a Postgres-backed queue with dedupe keys, retries and backoff, claimed with `FOR UPDATE SKIP LOCKED`.
 - `events`: the activity feed, streamed to the UI over SSE.
@@ -35,10 +35,11 @@ Every table has a `tenant_id`, which is `local` for now.
 |---|---|---|
 | `repos.sync` | List your repos (every 2 minutes; `ELEVATE_SYNC_MINUTES`). For repos whose `pushed_at` moved, read the default-branch head SHA | `repo.profile` for watched repos whose head differs from the profiled commit |
 | `repo.profile` | Read the README, manifests and tree at the head commit; model writes the profile; embed it; store `profiled_sha` | `repo.match` |
-| `sources.sweep` | Every 15 minutes (`ELEVATE_SWEEP_MINUTES`), fan out to each enabled source | `source.fetch` |
+| `sources.sweep` | Every 15 minutes (`ELEVATE_SWEEP_MINUTES`), add any built-in source the workspace lacks (matched by URL without the HN time window, so each is added once) and fan out to each enabled source | `source.fetch` |
 | `sources.sweep` (cont.) | Feeds about a product the user doesn't have are skipped | |
 | `source.fetch` | Fetch and dedupe items; drop ones published more than `ELEVATE_MAX_ITEM_AGE_DAYS` ago | `items.triage` |
-| `items.triage` | Model keeps engineering-relevant items and extracts techniques, tagging each with the AI products it requires and the model versions it is about; near-duplicates (cosine ≥ 0.82) merge. A batch the content filter blocks is halved until only the items that trip it fail; a batch the model can't answer otherwise (prose instead of JSON, after one re-ask) fails whole. Failed items are marked `error` with the reason; each scheduled sweep retries them, up to `TRIAGE_TRIES` (3) failures, and **Sweep now** retries all of them | `technique.legitimacy`, unless the user can't act on it |
+| `items.triage` | Model keeps engineering-relevant items and extracts techniques, tagging each with the AI products it requires, the model versions it is about, and whether it is cutting-edge; near-duplicates (cosine ≥ 0.82) merge. A batch the content filter blocks is halved until only the items that trip it fail; a batch the model can't answer otherwise (prose instead of JSON, after one re-ask) fails whole. Failed items are marked `error` with the reason; each scheduled sweep retries them, up to `TRIAGE_TRIES` (3) failures, and **Sweep now** retries all of them | `technique.legitimacy`, unless the user can't act on it or it is routine upkeep |
+| `techniques.classify` | Queued by every sweep: asks the model whether techniques recorded before triage said so are cutting-edge, 20 at a time. Does nothing once every technique has an answer | |
 | `technique.legitimacy` | **Gate 1**: evidence prior (credibility, corroboration, HN signal, public code, cited links) plus a skeptical review, decided by `legitimacyDecision` | `technique.match` if passed |
 | `technique.match` / `repo.match` | Top-K repos by embedding, then the model judges fit and writes a concrete change hypothesis | `recommendation.soundness` |
 | `recommendation.soundness` | **Gate 2**: reads the touchpoint files, gets a review of fit, risk, impact and measurement, decided by `soundnessDecision` | `open` (inbox) or `gated_out` |
@@ -61,6 +62,19 @@ The verdict is computed when it is used, not stored, so it follows the user's se
 - `recheckAccess` runs after a settings change and queues whatever is now usable.
 
 This sits in front of the gates and never lets anything through them, so the proved kernel is unchanged.
+
+### Cutting-edge only, and learning from votes
+
+`packages/engine/src/frontier.ts` keeps routine upkeep out while `recs.cuttingEdgeOnly` is on (the default). A technique is cutting-edge unless the model said otherwise (`techniques.frontier = false`) or `looksRoutine` matches: upkeep patterns (patch and security releases, CVEs, deprecations, version bumps) or a chore that isn't about AI (databases, pinning, forced migrations). Like access, the verdict is applied where it is used: triage skips Gate 1 for routine techniques, `matchTechnique` returns without calling the model, the Radar lists them under Routine upkeep, and `recheckAccess` sends them through the gates when the setting is turned off.
+
+`packages/engine/src/learner.ts` is a pure contextual bandit: features of a recommendation, Bayesian logistic regression fit by Newton's method with a Laplace posterior, and a Bayes-UCB ranking (the README's "How elevate learns what you like" has the method and references). `packages/engine/src/feedback.ts` connects it to the data:
+
+- `setFeedback` stores a vote and audits it. A vote never changes `status`, only what the user is shown.
+- `learned` refits from every vote and every approval or rejection since the last reset (`recs.learnerSince`), cached per database by a signature of that training set and refreshed at least every 10 minutes.
+- `judgeRecs` decides what each open recommendation shows: `held` (access, disliked, routine, or learned: the model is 80% sure you'd like it under 30%), the `fit` badge, a short `why`, and the `rank` that `listRecommendations` sorts Ready for review by. A like overrides routine and learned holds.
+- `stats`, `listRepos`, `activityGraph` and `radar` count held recommendations as filtered out, not waiting.
+
+`POST /api/recommendations/:id/feedback` takes `{ vote: "like" | "dislike" | "none" }`; `GET /api/learner` summarises what was learned and `DELETE /api/learner` forgets it.
 
 Status changes go through `applyEvent`. It calls the proved `transition` function and appends to `history`, so every status can be replayed from its history; the tests check this.
 

@@ -16,3 +16,5 @@ export { demoLLM } from "./fake";
 export * from "./search";
 export * from "./models";
 export * from "./access";
+export * from "./frontier";
+export * from "./feedback";

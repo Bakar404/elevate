@@ -236,3 +236,6 @@ export function refreshSourceUrl(src: SourceDef): string {
   }
   return src.url;
 }
+
+/** What identifies a source from one sweep to the next: its URL without the HN time window, which is stamped when the URL is built. */
+export const sourceKey = (url: string) => url.replace(/created_at_i>\d+/, "");

@@ -1,4 +1,4 @@
-import { accessProfile, activityGraph, discoveryFeed, listRecommendations, radar, searchPlan, stats } from "@elevate/engine";
+import { accessProfile, activityGraph, cuttingEdgeOnly, discoveryFeed, listRecommendations, radar, searchPlan, stats } from "@elevate/engine";
 import { ArrowRight, Inbox, Radar as RadarIcon, ShieldCheck, Sparkles } from "lucide-react";
 import { cookies } from "next/headers";
 import Link from "next/link";
@@ -29,7 +29,7 @@ export default async function InboxPage({ searchParams }: { searchParams: Promis
   const { tab: raw } = await searchParams;
   const tab: TabKey = raw && raw in TABS ? (raw as TabKey) : "open";
   const ctx = await getCtx();
-  const [s, all, graph, jar, plan, focused, recent, techs, access] = await Promise.all([
+  const [s, all, graph, jar, plan, focused, recent, techs, access, onlyCuttingEdge] = await Promise.all([
     stats(ctx),
     listRecommendations(ctx),
     activityGraph(ctx),
@@ -39,15 +39,19 @@ export default async function InboxPage({ searchParams }: { searchParams: Promis
     discoveryFeed(ctx, { limit: 8, hideHype: true }),
     radar(ctx),
     accessProfile(ctx),
+    cuttingEdgeOnly(ctx),
   ]);
-  // A recommendation the user can no longer act on (its model was replaced, or the product isn't connected) isn't waiting on them.
-  const inTab = (r: (typeof all)[number], k: TabKey) =>
-    r.blocked && r.status === "open" ? k === "filtered" : (TABS[k].statuses as readonly string[]).includes(r.status);
+  // An open recommendation that's held back isn't waiting on the user: they can't act on it (its model was replaced, or
+  // the product isn't connected), they disliked it, it's routine upkeep, or it's the kind of idea they pass on.
+  const inTab = (r: (typeof all)[number], k: TabKey) => (r.held ? k === "filtered" : (TABS[k].statuses as readonly string[]).includes(r.status));
   const usable = techs.filter((t) => t.access.usable);
   const setAside = techs.length - usable.length;
+  // Routine upkeep stays on the Radar under its own tab, not with the cutting-edge techniques.
+  const routine = onlyCuttingEdge ? usable.filter((t) => !t.cuttingEdge).length : 0;
+  const frontier = usable.filter((t) => !onlyCuttingEdge || t.cuttingEdge);
   const fresh = focused.length ? focused : recent;
-  const legit = techs
-    .filter((t) => t.legitimacy?.passed && t.access.usable)
+  const legit = frontier
+    .filter((t) => t.legitimacy?.passed)
     .sort((a, b) => b.foundFor.length - a.foundFor.length || (b.legitimacy?.score ?? 0) - (a.legitimacy?.score ?? 0))
     .slice(0, 4);
   const logo = jar.get(LOGO_COOKIE)?.value;
@@ -85,7 +89,11 @@ export default async function InboxPage({ searchParams }: { searchParams: Promis
           <div className="mt-4 grid grid-cols-2 gap-6 rounded-2xl border border-line bg-bg/60 p-5 backdrop-blur-md sm:grid-cols-4">
             <Stat label="Ready" value={s.open} tone="olive" hint="awaiting your call" />
             <Stat label="Repos watched" value={s.repos} hint={`${s.allowedRepos} allow swarms`} />
-            <Stat label="Techniques" value={s.techniques} hint={`${usable.filter((t) => t.legitimacy?.passed).length} legit · ${usable.filter((t) => t.legitimacy && !t.legitimacy.passed).length} hype${setAside ? ` · ${setAside} set aside` : ""}`} />
+            <Stat
+              label="Techniques"
+              value={s.techniques}
+              hint={`${frontier.filter((t) => t.legitimacy?.passed).length} legit · ${frontier.filter((t) => t.legitimacy && !t.legitimacy.passed).length} hype${routine ? ` · ${routine} routine` : ""}${setAside ? ` · ${setAside} set aside` : ""}`}
+            />
             <Stat
               label="Open PRs"
               value={s.prs}
@@ -118,6 +126,15 @@ export default async function InboxPage({ searchParams }: { searchParams: Promis
         </div>
         {rows.length ? (
           <div className="grid gap-3">
+            {tab === "open" && (
+              <p className="-mt-1 text-xs text-faint" data-testid="vote-hint">
+                Best first for you. Like or dislike an idea to teach elevate what you want;{" "}
+                <Link href="/settings#recommendations" className="underline decoration-line-strong underline-offset-2 hover:text-fg">
+                  see what it has learned
+                </Link>
+                .
+              </p>
+            )}
             {rows.map((r, i) => (
               <RecCard key={r.id} r={r} index={i} />
             ))}
@@ -125,8 +142,10 @@ export default async function InboxPage({ searchParams }: { searchParams: Promis
         ) : (
           <Empty icon={tab === "open" ? <Pip mood="sleepy" size={56} className="size-14!" /> : <Inbox />} title={tab === "open" ? "Nothing waiting on you" : "Nothing here"}>
             {tab === "open"
-              ? "New techniques are checked against your repos as they arrive. Only ones that pass both gates show up here."
-              : "Recommendations move here as they progress."}
+              ? `New ${onlyCuttingEdge ? "cutting-edge " : ""}techniques are checked against your repos as they arrive. Only ones that pass both gates show up here.`
+              : tab === "filtered"
+                ? "Ideas that fail a gate, that you dislike, or that are routine upkeep land here, with the reason."
+                : "Recommendations move here as they progress."}
           </Empty>
         )}
       </div>
@@ -152,7 +171,12 @@ export default async function InboxPage({ searchParams }: { searchParams: Promis
           )}
         </Reveal>
         <Reveal delay={0.08}>
-          <SectionHead icon={<RadarIcon />} title="On the radar" hint="Legit techniques, ones found for your repos first." href="/radar" />
+          <SectionHead
+            icon={<RadarIcon />}
+            title="On the radar"
+            hint={`Legit ${onlyCuttingEdge ? "cutting-edge " : ""}techniques, ones found for your repos first.`}
+            href="/radar"
+          />
           <div className="grid gap-3">
             {legit.length === 0 && <Empty icon={<RadarIcon />} title="No legit techniques yet" />}
             {legit.map((t) => (

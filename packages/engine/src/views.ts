@@ -1,7 +1,9 @@
 import { and, asc, auditLog, desc, eq, events, inArray, isNotNull, items, recommendations, repos, sources, sql, swarms, swarmTasks, techniques, threads, messages } from "@elevate/db";
-import { defaultSources, ECOSYSTEM_LABEL, sourceEcosystem } from "@elevate/sources";
-import { accessProfile, accessView, verdictFor } from "./access";
+import { defaultSources, ECOSYSTEM_LABEL, sourceEcosystem, sourceKey } from "@elevate/sources";
+import { accessProfile, accessView } from "./access";
 import type { Ctx } from "./context";
+import { judgeRecs, subjectColumns, type Judgement } from "./feedback";
+import { cuttingEdgeOnly, isCuttingEdge } from "./frontier";
 import { focusQueries, TRIAGE_TRIES } from "./ingest";
 import { autoMerge, prCheckMinutes, prNextStep, type PrNextStep, type SwarmPr } from "./prs";
 
@@ -26,16 +28,9 @@ export async function stats(ctx: Ctx) {
       (select count(*)::int from recommendations r join repos p on p.id = r.repo_id where p.watch and r.status = 'merged') as merged,
       (select count(*)::int from swarms where status in ('queued','planning','running')) as "activeSwarms"
   `).then((r) => (Array.isArray(r) ? r : (r as { rows: Record<string, number>[] }).rows));
-  // Open recommendations the user can no longer act on are shown as filtered, so don't count them as waiting.
-  const access = await accessProfile(ctx);
-  const openRecs = await ctx.db
-    .select({ name: techniques.name, summary: techniques.summary, claims: techniques.claims })
-    .from(recommendations)
-    .innerJoin(repos, eq(recommendations.repoId, repos.id))
-    .innerJoin(techniques, eq(recommendations.techniqueId, techniques.id))
-    .where(and(eq(recommendations.status, "open"), eq(repos.watch, true)));
-  const blocked = openRecs.filter((t) => !verdictFor(t, access).usable).length;
-  if (row) row.open = Math.max(0, (row.open ?? 0) - blocked);
+  // Open recommendations shown as filtered out (can't act on it, disliked, routine upkeep, or ones the user
+  // usually passes on) aren't waiting on them.
+  if (row) row.open = (await judgedOpen(ctx, { watchedOnly: true })).filter((r) => !r.held).length;
   return row as {
     repos: number;
     allowedRepos: number;
@@ -96,47 +91,87 @@ async function recPrs(ctx: Ctx, recs: { id: string; status: string; allowSwarm: 
 }
 
 export async function listRecommendations(ctx: Ctx, status?: string) {
-  const access = await accessProfile(ctx);
   const rows = await ctx.db
-    .select({ ...recColumns, techniqueSummary: techniques.summary, claims: techniques.claims })
+    .select({ ...recColumns, ...subjectColumns })
     .from(recommendations)
     .innerJoin(repos, eq(recommendations.repoId, repos.id))
     .innerJoin(techniques, eq(recommendations.techniqueId, techniques.id))
     .where(and(eq(repos.watch, true), status ? eq(recommendations.status, status as never) : undefined))
     .orderBy(desc(recommendations.score), desc(recommendations.createdAt))
     .limit(200);
-  const prs = await recPrs(ctx, rows);
-  return rows.map(({ techniqueSummary, claims, ...r }) => {
+  const [prs, judged] = await Promise.all([recPrs(ctx, rows), judgeRecs(ctx, rows)]);
+  const out = rows.map(({ techniqueSummary: _s, claims: _c, embedding: _e, frontier: _f, techniqueId: _t, ...r }) => {
     const pr = prs.get(r.id);
+    const j = judged.get(r.id)!;
     return {
       ...r,
       /** Set when the user can't act on the technique any more (replaced model, product not connected). */
-      blocked: accessView({ name: r.technique, summary: techniqueSummary, claims }, access).reason,
+      blocked: j.blocked,
+      /** Set on an open recommendation that is shown under Filtered out instead of Ready for review, with why. */
+      held: j.held,
+      /** The learner's estimate that the user would like it, and what in their votes moved it (null before any). */
+      fit: j.fit,
+      why: j.why,
       /** What its pull request is waiting on, while it has one. */
       pr: pr ? { swarmId: pr.swarmId, url: pr.url, next: pr.next } : null,
     };
   });
+  return rankOpen(out, judged);
+}
+
+/** Ready-for-review recommendations go in the learner's order (Bayes-UCB); everything else keeps its place. */
+function rankOpen<T extends { id: string; status: string }>(rows: T[], judged: Map<string, Judgement>) {
+  const slots = rows.flatMap((r, i) => (r.status === "open" ? [i] : []));
+  const ranked = slots.map((i) => rows[i]!).sort((a, b) => judged.get(b.id)!.rank - judged.get(a.id)!.rank);
+  const out = [...rows];
+  slots.forEach((slot, k) => (out[slot] = ranked[k]!));
+  return out;
+}
+
+/** Every open recommendation and whether it is held back from Ready for review. */
+async function judgedOpen(ctx: Ctx, opts: { watchedOnly?: boolean } = {}) {
+  const rows = await ctx.db
+    .select({ ...subjectColumns, repoId: repos.id })
+    .from(recommendations)
+    .innerJoin(repos, eq(recommendations.repoId, repos.id))
+    .innerJoin(techniques, eq(recommendations.techniqueId, techniques.id))
+    .where(and(eq(recommendations.status, "open"), opts.watchedOnly ? eq(repos.watch, true) : undefined));
+  const judged = await judgeRecs(ctx, rows);
+  return rows.map((r) => ({ id: r.id, repoId: r.repoId, held: judged.get(r.id)!.held }));
 }
 
 export async function getRecommendation(ctx: Ctx, id: string) {
-  const [rec] = await ctx.db
-    .select({ ...recColumns, techniqueId: techniques.id, techniqueSummary: techniques.summary, claims: techniques.claims, repoUrl: repos.htmlUrl })
+  const [row] = await ctx.db
+    .select({ ...recColumns, ...subjectColumns, repoUrl: repos.htmlUrl })
     .from(recommendations)
     .innerJoin(repos, eq(recommendations.repoId, repos.id))
     .innerJoin(techniques, eq(recommendations.techniqueId, techniques.id))
     .where(eq(recommendations.id, id));
-  if (!rec) return undefined;
+  if (!row) return undefined;
+  const { embedding: _e, ...rec } = row;
   const access = accessView({ name: rec.technique, summary: rec.techniqueSummary, claims: rec.claims }, await accessProfile(ctx));
-  const [sourcesFor, swarmRows] = await Promise.all([
+  const [sourcesFor, swarmRows, judged] = await Promise.all([
     ctx.db
       .select({ title: items.title, url: items.url, source: sources.name, credibility: sources.credibility, points: items.signals })
       .from(items)
       .innerJoin(sources, eq(items.sourceId, sources.id))
       .where(eq(items.techniqueId, rec.techniqueId)),
     ctx.db.select().from(swarms).where(eq(swarms.recommendationId, id)).orderBy(desc(swarms.createdAt)),
+    judgeRecs(ctx, [row]).then((m) => m.get(row.id)!),
   ]);
   const pr = (await recPrs(ctx, [rec])).get(rec.id) ?? null;
-  return { ...rec, access, items: sourcesFor, swarms: swarmRows, pr, autoMerge: await autoMerge(ctx) };
+  return {
+    ...rec,
+    access,
+    cuttingEdge: isCuttingEdge({ name: rec.technique, summary: rec.techniqueSummary, frontier: rec.frontier }),
+    held: judged.held,
+    fit: judged.fit,
+    why: judged.why,
+    items: sourcesFor,
+    swarms: swarmRows,
+    pr,
+    autoMerge: await autoMerge(ctx),
+  };
 }
 
 export async function listRepos(ctx: Ctx) {
@@ -145,6 +180,8 @@ export async function listRepos(ctx: Ctx) {
     .select({ repoId: recommendations.repoId, status: recommendations.status, n: sql<number>`count(*)::int` })
     .from(recommendations)
     .groupBy(recommendations.repoId, recommendations.status);
+  const held = new Map<string, number>();
+  for (const o of await judgedOpen(ctx)) if (o.held) held.set(o.repoId, (held.get(o.repoId) ?? 0) + 1);
   return rows.map((r) => {
     const mine = counts.filter((c) => c.repoId === r.id);
     const n = (s: string) => mine.find((c) => c.status === s)?.n ?? 0;
@@ -163,7 +200,7 @@ export async function listRepos(ctx: Ctx) {
       profile: r.profile,
       profiledAt: r.profiledAt,
       profiledSha: r.profiledSha,
-      open: n("open"),
+      open: n("open") - (held.get(r.id) ?? 0),
       prs: n("pr_opened"),
       merged: n("merged"),
     };
@@ -182,7 +219,7 @@ export type ActivityGraph = Awaited<ReturnType<typeof activityGraph>>;
  * a recommendation awaits approval.
  */
 export async function activityGraph(ctx: Ctx, maxRepos = 12, maxTechniques = 8) {
-  const [repoRows, recRows, swarmRows] = await Promise.all([
+  const [repoRows, recRows, swarmRows, open] = await Promise.all([
     ctx.db
       .select({ id: repos.id, fullName: repos.fullName, language: repos.language, allowSwarm: repos.allowSwarm, pushedAt: repos.pushedAt })
       .from(repos)
@@ -192,8 +229,10 @@ export async function activityGraph(ctx: Ctx, maxRepos = 12, maxTechniques = 8) 
       .from(recommendations)
       .innerJoin(techniques, eq(recommendations.techniqueId, techniques.id)),
     ctx.db.select({ repoId: swarms.repoId, status: swarms.status }).from(swarms),
+    judgedOpen(ctx, { watchedOnly: true }),
   ]);
-  const live = recRows.filter((r) => LIVE_REC.has(r.status));
+  const held = new Set(open.filter((o) => o.held).map((o) => o.id));
+  const live = recRows.filter((r) => LIVE_REC.has(r.status) && !held.has(r.id));
   const working = new Set(swarmRows.filter((s) => ACTIVE_SWARM.has(s.status)).map((s) => s.repoId));
   for (const r of live) if (r.status === "approved" || r.status === "in_progress") working.add(r.repoId);
 
@@ -251,10 +290,11 @@ export async function radar(ctx: Ctx) {
     .innerJoin(sources, eq(items.sourceId, sources.id));
   const name = await repoNames(ctx);
   const recs = await ctx.db
-    .select({ techniqueId: recommendations.techniqueId, status: recommendations.status })
+    .select({ id: recommendations.id, techniqueId: recommendations.techniqueId, status: recommendations.status })
     .from(recommendations)
     .innerJoin(repos, eq(recommendations.repoId, repos.id))
     .where(eq(repos.watch, true));
+  const held = new Set((await judgedOpen(ctx, { watchedOnly: true })).filter((o) => o.held).map((o) => o.id));
   const access = await accessProfile(ctx);
   return techs.map((t) => ({
     access: accessView(t, access),
@@ -263,6 +303,8 @@ export async function radar(ctx: Ctx) {
     summary: t.summary,
     category: t.category,
     novelty: t.novelty,
+    /** False for routine upkeep (a patch release, a deprecation, a database tip), which isn't recommended while only cutting-edge ideas are. */
+    cuttingEdge: isCuttingEdge(t),
     claims: t.claims,
     legitimacy: t.legitimacy,
     firstSeenAt: t.firstSeenAt,
@@ -270,7 +312,7 @@ export async function radar(ctx: Ctx) {
     /** Repos whose own web search surfaced this technique. */
     foundFor: [...new Set(its.filter((i) => i.techniqueId === t.id).flatMap((i) => i.signals.focus?.repoIds ?? []))].map(name).filter(Boolean) as string[],
     matches: recs.filter((r) => r.techniqueId === t.id).length,
-    open: recs.filter((r) => r.techniqueId === t.id && r.status === "open").length,
+    open: recs.filter((r) => r.techniqueId === t.id && r.status === "open" && !held.has(r.id)).length,
   }));
 }
 
@@ -284,7 +326,7 @@ async function repoNames(ctx: Ctx) {
 export type FeedItem = Awaited<ReturnType<typeof discoveryFeed>>[number];
 
 /** The latest things the sweep pulled in, newest first; `repoOnly` keeps just what a repo's own search found. */
-/** `hideHype` drops items judged irrelevant or whose technique failed the legitimacy gate (for surfaces that should only show signal). */
+/** `hideHype` drops items judged irrelevant, whose technique failed the legitimacy gate, or (while only cutting-edge ideas are wanted) is routine upkeep: for surfaces that should only show signal. */
 export async function discoveryFeed(ctx: Ctx, opts: { limit?: number; repoOnly?: boolean; hideHype?: boolean } = {}) {
   const limit = opts.limit ?? 60;
   const rows = await ctx.db
@@ -304,6 +346,7 @@ export async function discoveryFeed(ctx: Ctx, opts: { limit?: number; repoOnly?:
       technique: techniques.name,
       techniqueSummary: techniques.summary,
       claims: techniques.claims,
+      frontier: techniques.frontier,
       legit: sql<boolean | null>`(${techniques.legitimacy}->>'passed')::boolean`,
     })
     .from(items)
@@ -324,13 +367,16 @@ export async function discoveryFeed(ctx: Ctx, opts: { limit?: number; repoOnly?:
     .limit(opts.hideHype || opts.repoOnly ? limit * 3 : limit);
   const name = await repoNames(ctx);
   const access = await accessProfile(ctx);
+  const onlyCuttingEdge = await cuttingEdgeOnly(ctx);
   return rows
-    .map(({ techniqueSummary, claims, ...r }) => ({
+    .map(({ techniqueSummary, claims, frontier, ...r }) => ({
       ...r,
       /** Why the user can't act on this item's technique, if they can't. */
       blocked: r.technique ? accessView({ name: r.technique, summary: techniqueSummary ?? "", claims }, access).reason : null,
+      /** True when its technique is routine upkeep rather than something new. */
+      routine: r.technique ? !isCuttingEdge({ name: r.technique, summary: techniqueSummary, frontier }) : false,
     }))
-    .filter((r) => !opts.hideHype || !r.blocked)
+    .filter((r) => !opts.hideHype || (!r.blocked && !(onlyCuttingEdge && r.routine)))
     .filter((r) => !opts.repoOnly || (r.signals.focus?.repoIds ?? []).some((id) => name(id)))
     .slice(0, limit)
     .map(({ signals, lastError, attempts, ...r }) => ({
@@ -350,7 +396,7 @@ export async function searchPlan(ctx: Ctx) {
   return (await focusQueries(ctx)).map((q) => ({ term: q.term, kind: q.kind, repos: q.repoIds.map(name).filter(Boolean) as string[] }));
 }
 export async function listSources(ctx: Ctx) {
-  const builtIn = new Set(defaultSources().map((d) => d.url.replace(/created_at_i>\d+/, "")));
+  const builtIn = new Set(defaultSources().map((d) => sourceKey(d.url)));
   const counts = await ctx.db
     .select({ sourceId: items.sourceId, n: sql<number>`count(*)::int`, kept: sql<number>`count(*) filter (where ${items.status} = 'triaged')::int` })
     .from(items)
@@ -365,7 +411,7 @@ export async function listSources(ctx: Ctx) {
       /** Set when the feed is about a product the user doesn't have, so sweeps skip it. */
       paused: eco && !have.has(eco) ? `Skipped: you haven't connected ${ECOSYSTEM_LABEL[eco]}` : null,
       /** Built-in sources come back on every sweep, so they can be switched off but not removed. */
-      builtIn: s.url.startsWith("focus://") || s.url.startsWith("demo://") || builtIn.has(s.url.replace(/created_at_i>\d+/, "")),
+      builtIn: s.url.startsWith("focus://") || s.url.startsWith("demo://") || builtIn.has(sourceKey(s.url)),
       items: c?.n ?? 0,
       /** How many of its items turned out to describe a technique: a feed with many items and none kept is noise. */
       kept: c?.kept ?? 0,

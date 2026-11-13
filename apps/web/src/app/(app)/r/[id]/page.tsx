@@ -1,12 +1,13 @@
 import { getRecommendation } from "@elevate/engine";
-import { ArrowLeft, Ban, ExternalLink } from "lucide-react";
+import { ArrowLeft, Ban, ExternalLink, Sparkles } from "lucide-react";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { GateCard } from "@/components/gate-card";
 import { PrIcon, PrPanel, prState } from "@/components/pr";
-import { StatusBadge } from "@/components/rec";
+import { HELD, StatusBadge, whyText } from "@/components/rec";
 import { RecActions } from "@/components/rec-actions";
 import { Badge, Card, ScoreRing } from "@/components/ui";
+import { VoteButtons } from "@/components/vote";
 import { getCtx } from "@/lib/server";
 import { ago } from "@/lib/utils";
 
@@ -33,6 +34,10 @@ export default async function RecommendationPage({ params }: { params: Promise<{
   const r = await getRecommendation(ctx, id).catch(() => undefined);
   if (!r) notFound();
   const h = r.hypothesis;
+  const why = whyText(r.why);
+  // Access has its own note below; the other reasons an open recommendation is held back get this one.
+  const held = r.held && r.held.kind !== "access" ? r.held : null;
+  const HeldIcon = held ? (HELD[held.kind] ?? HELD.learned!).icon : null;
 
   return (
     <div className="mx-auto max-w-5xl px-4 sm:px-8 py-8">
@@ -52,12 +57,40 @@ export default async function RecommendationPage({ params }: { params: Promise<{
             <Badge>{r.category}</Badge>
           </div>
           <h1 className="mt-1 text-2xl font-semibold tracking-tight text-balance">{r.title}</h1>
-          <div className="mt-3 flex items-center gap-2">
+          <div className="mt-3 flex flex-wrap items-center gap-2">
             <StatusBadge status={r.status} />
             <span className="text-xs text-faint">raised {ago(r.createdAt)}</span>
+            <VoteButtons id={r.id} feedback={r.feedback} status={r.status} labels className="ml-auto" />
           </div>
+          {r.fit != null && (
+            <p className="mt-2 flex items-start gap-1.5 text-xs text-faint" data-testid="fit-line">
+              <Sparkles className="mt-px size-3.5 shrink-0" aria-hidden />
+              <span className="text-pretty">
+                {Math.round(r.fit * 100)}% likely your kind of thing{why ? `: ${why}` : ""}.
+              </span>
+            </p>
+          )}
         </div>
       </header>
+
+      {held && HeldIcon && (
+        <div className="mt-6 flex items-start gap-3 rounded-xl border border-line-strong bg-ink/5 px-4 py-3 text-sm" role="note" data-testid="held-note" data-kind={held.kind}>
+          <HeldIcon className="mt-0.5 size-4 shrink-0 text-faint" aria-hidden />
+          <p className="text-pretty">
+            <span className="font-medium">Filtered out of Ready for review.</span> <span className="text-muted">{held.reason}.</span>{" "}
+            {held.kind === "disliked" ? (
+              <span className="text-muted">Take the dislike back to return it.</span>
+            ) : (
+              <>
+                <span className="text-muted">Like it to bring it back, or</span>{" "}
+                <Link href="/settings#recommendations" className="underline decoration-line-strong underline-offset-4 hover:text-fg">
+                  {held.kind === "routine" ? "let routine upkeep through" : "see what elevate has learned"}
+                </Link>
+              </>
+            )}
+          </p>
+        </div>
+      )}
 
       {r.access.reason && (
         <div className="mt-6 flex items-start gap-3 rounded-xl border border-sand/30 bg-sand/10 px-4 py-3 text-sm" role="note" data-testid="access-note">

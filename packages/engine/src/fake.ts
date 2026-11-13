@@ -1,5 +1,6 @@
 import { FakeLLM, type JsonRequest } from "@elevate/agent";
 import { inferTags } from "@elevate/sources";
+import { looksRoutine } from "./frontier";
 
 const TECH_WORDS =
   /gpt|claude|codex|copilot|gemini|prompt|proof|verif|formal|test|fuzz|agent|llm|inference|decod|compil|rust|wasm|performance|benchmark|weight|retriev|rag|type|security|cache|quantiz|distill|embedding|vector|parser|kernel|spec/i;
@@ -35,6 +36,8 @@ export function demoLLM(): FakeLLM {
           const t = title!.trim();
           const relevant = TECH_WORDS.test(t);
           const name = t.split(/[:\u2013\u2014(]/)[0]!.trim().slice(0, 60);
+          // Drop the prompt's own annotations so only the item's text becomes its summary.
+          const summary = (body ?? "").replace(/^(Published: |Found searching ").*\n?/gm, "").trim().slice(0, 240) || t;
           const tags = inferTags(t);
           return {
             index: Number(i),
@@ -42,8 +45,9 @@ export function demoLLM(): FakeLLM {
             technique: relevant
               ? {
                   name,
-                  summary: (body ?? "").replace(/^Published: .*\n?/, "").trim().slice(0, 240) || t,
+                  summary,
                   category: /verif|proof|test|fuzz|formal|\bspec\b/i.test(t) ? "testing-verification" : /infer|decod|quantiz/i.test(t) ? "llm-inference" : "developer-tooling",
+                  frontier: !looksRoutine({ name: t, summary }),
                   claimedBenefits: ["Fewer defects", "Faster iteration"],
                   appliesTo: [...words(t)].slice(0, 5),
                   prerequisites: [],
@@ -56,6 +60,12 @@ export function demoLLM(): FakeLLM {
         }),
       };
     })
+    .on("classify", (req) => ({
+      results: req.prompt.split("\n\n").flatMap((block) => {
+        const index = block.match(/^\[(\d+)\]/)?.[1];
+        return index === undefined ? [] : [{ index: Number(index), frontier: !looksRoutine({ name: block }) }];
+      }),
+    }))
     .on("match", (req) => {
       const tech = words(req.prompt.split("Repositories:")[0] ?? "");
       const sections = req.prompt.split("\n### ").slice(1);

@@ -41,6 +41,8 @@ Proof-driven development, speculative decoding, weight-space editing, whatever l
 
 You approve, and elevate sends a swarm of agents that plan, implement, test and review the change, then open a **draft** PR.
 
+It recommends what's new, not upkeep: AI models and methods, agent patterns, recent research. Patch releases, deprecations and database tips stay on the Radar instead. Like or dislike any recommendation and elevate learns what you want, with a contextual bandit from the research literature (see [How elevate learns what you like](#how-elevate-learns-what-you-like)).
+
 Then elevate follows the PR. Every couple of minutes it reads the PR's checks and whether GitHub can merge it, and the swarm page says what the PR is waiting on and what to do next. Once at least one check passed, none failed or is still running, and there are no conflicts, you click **Merge**. Or turn on "Auto-merge verified PRs" in Settings and elevate squash-merges it on its own and deletes the branch. It never merges a PR its checks didn't verify, and merges or closes made on GitHub show up in elevate too.
 
 By default the PR is yours: when the Copilot coding agent finishes, elevate squashes its work into one commit under your account, opens the draft PR as you and closes Copilot's PR. Turn off "Publish swarm PRs as me" in Settings to keep Copilot's PR as it is.
@@ -159,6 +161,44 @@ An approved recommendation becomes a task graph:
 </picture>
 
 See [docs/architecture.md](docs/architecture.md) for the packages, jobs and data model, and [docs/design.md](docs/design.md) for the UI.
+
+## How elevate learns what you like
+
+elevate recommends cutting-edge work: new AI models and methods, agent patterns, recent research. Triage asks the model whether each technique is cutting-edge. A deterministic check (`looksRoutine` in `packages/engine/src/frontier.ts`) catches upkeep the model lets through: patch and security releases, CVEs, deprecations, version bumps, and database or pinning chores that aren't about AI. Routine upkeep is still listed under Radar → **Routine upkeep**. It skips Gate 1 and never becomes a recommendation, unless you turn off **Cutting-edge only** in Settings → Recommendations.
+
+Every recommendation has 👍 and 👎 buttons.
+
+- **Ordering:** Ready for review is ordered by how likely you are to like each idea.
+- **Filtered out:** an idea you dislike moves there, and so do kinds of idea you keep passing on, each with the reason.
+- **Taking a vote back:** click the vote again, or **Undo** in its toast.
+- **What it learned:** Settings → Recommendations shows it (for example "moves up: agents, retrieval & RAG; moves down: databases"), and can forget it all.
+
+The ranking is a contextual bandit (`packages/engine/src/learner.ts`). It models P(like) with Bayesian logistic regression and ranks with Bayes-UCB:
+
+| | |
+|---|---|
+| **Context** | Each recommendation as sparse, named features: cutting-edge or routine, category, topics (agents, retrieval & RAG, inference & serving, …), where it was found (HN, arXiv, blogs, GitHub), the repo, effort and risk, both gate scores, how well it fits the repo, and a 16-dimensional random projection of the technique's embedding, so similar ideas share what was learned. |
+| **Reward** | 👍 is 1 and 👎 is 0, at weight 1. Approving (and whatever follows: a swarm, a PR, a merge) is 1 and rejecting is 0, at weight ½, because a good idea can be rejected for a busy repo. |
+| **Model** | P(like \| x) = σ(wᵀx), with a Gaussian prior w ~ N(m₀, λ⁻¹I), λ = 1. The prior mean leans toward cutting-edge ideas with good gate scores, so the order makes sense before your first vote. It is fit to the MAP by Newton's method (IRLS) on every vote at once, so the order you voted in doesn't matter. The Laplace approximation N(ŵ, H⁻¹) at the mode says how sure it is about each recommendation. |
+| **Ranking** | Bayes-UCB: open recommendations are sorted by the 1 − 1/t quantile of P(like), σ(μ + z·s) with z = Φ⁻¹(1 − 1/t) and t = rewards so far + 2. Ideas it is unsure about rank high enough to be seen and learned from. The "N% your kind" badge is the posterior mean of P(like), from MacKay's probit approximation. |
+| **Holding back** | Only after at least 3 dislikes' worth of negative evidence, and only when even an optimistic estimate (the 80th percentile) says you'd like it less than 30% of the time. One vote only reorders. With nothing liked, about four dislikes of one kind hold back the next idea like them. A like always brings an idea back. |
+| **Explanations** | The features whose weights moved furthest from the prior, in words. Features every vote shared are skipped: if you've only voted on one repo, the repo explains nothing. |
+
+Only the votes are stored. The model is refit from all of them whenever they change.
+
+**References.** The method is standard, and elevate implements it in one TypeScript file of about 450 lines, with no new dependencies.
+
+- [**david-cortes/contextualbandits**](https://github.com/david-cortes/contextualbandits) (BSD-2-Clause), whose `LogisticUCB` is the same construction: L2-regularized logistic regression with the upper bound σ(wᵀx + Φ⁻¹(p)·√(xᵀ(XᵀWX + λI)⁻¹x)). elevate uses its defaults: λ = 1, and p = 80% for holding ideas back. It differs in three ways:
+  - one model is shared by every recommendation, instead of one per arm, because each recommendation is a new arm;
+  - the prior mean isn't zero;
+  - ranking uses Bayes-UCB's growing quantile instead of a fixed percentile.
+- D. Cortes, [Adapting multi-armed bandits policies to contextual bandits scenarios](https://arxiv.org/abs/1811.04383), 2018. This is the paper the package asks to be cited for its methods.
+- O. Chapelle and L. Li, [An Empirical Evaluation of Thompson Sampling](https://papers.nips.cc/paper_files/paper/2011/hash/e53a0a2978c28872a4505bdb51db06dc-Abstract.html), NeurIPS 2011. Its Algorithm 3 is regularized logistic regression with a Laplace approximation of the posterior. elevate refits all votes as one batch and keeps the full covariance instead of its diagonal.
+- E. Kaufmann, O. Cappé and A. Garivier, [On Bayesian Upper Confidence Bounds for Bandit Problems](https://proceedings.mlr.press/v22/kaufmann12.html), AISTATS 2012. This is Bayes-UCB; elevate uses c = 0, as the paper recommends.
+- L. Li, W. Chu, J. Langford and R. E. Schapire, [A Contextual-Bandit Approach to Personalized News Article Recommendation](https://arxiv.org/abs/1003.0146), WWW 2010. LinUCB treats recommendation as a contextual bandit over feature vectors. elevate swaps its linear model for a logistic one, because a vote is binary.
+- C. M. Bishop, *Pattern Recognition and Machine Learning*, 2006, §4.4–4.5: the Laplace approximation, and the predictive distribution of Bayesian logistic regression. The probit approximation is from D. J. C. MacKay, [The Evidence Framework Applied to Classification Networks](https://doi.org/10.1162/neco.1992.4.5.720), Neural Computation, 1992.
+
+`packages/engine/test/learner.test.ts` checks the fit against scikit-learn's `LogisticRegression(C=1)` with sample weights, and the posterior against (XᵀWX + λI)⁻¹, to 7 digits. `learner_golden.py` regenerates those values.
 
 ## Models
 

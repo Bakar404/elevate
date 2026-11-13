@@ -39,6 +39,9 @@ export const TriageSchema = z.object({
             "programming-languages",
             "other",
           ]),
+          frontier: z
+            .boolean()
+            .describe("True for something new a team would be early to adopt (an AI or ML technique, model capability, agent pattern, research method). False for routine upkeep and established practice"),
           claimedBenefits: z.array(z.string()),
           appliesTo: z.array(z.string()).describe("Kinds of codebases/stacks that could adopt it"),
           prerequisites: z.array(z.string()),
@@ -57,6 +60,9 @@ export const TriageSchema = z.object({
   ),
 });
 
+export const FRONTIER_GUIDE = `frontier=true: something new that a team would be early to adopt: an AI or ML technique, a new model capability or API, an agent or tool-use pattern, a research method, a new programming paradigm or verification approach.
+frontier=false: routine upkeep and established practice: version, minor, patch or security releases, CVEs, deprecations and forced migrations, pricing or plan changes, database and infrastructure tuning tips, CI and configuration hygiene, style guides, and practices most teams already know.`;
+
 export const TRIAGE_SYSTEM = `You triage a stream of articles, papers and posts for a tool that keeps software repos up to date with new techniques.
 Mark an item relevant ONLY when it describes something concrete that an engineering team could adopt in an existing codebase
 (a technique, method, library, model capability, protocol, verification approach, programming paradigm).
@@ -68,7 +74,17 @@ An item about a model or product version that has since been replaced (an announ
 An item published long ago that is only being re-shared => not relevant unless the technique itself is still new to most teams.
 A bare model or product launch is not a technique; it is relevant only when it gives a team something concrete to change (a new API capability, a migration, a pricing or context change worth acting on).
 For every technique, fill \`requires\` and \`models\` honestly: they decide which users see it. A general method demonstrated with one vendor's model does not require that vendor.
+Set \`frontier\` just as honestly: only cutting-edge techniques become recommendations, and routine upkeep stays on the radar.
+${FRONTIER_GUIDE}
 Extract the technique precisely. Do not inflate claims beyond what the item says.`;
+
+export const ClassifySchema = z.object({
+  results: z.array(z.object({ index: z.number().int(), frontier: z.boolean() })),
+});
+
+export const CLASSIFY_SYSTEM = `You sort techniques for a tool that recommends cutting-edge changes to software repositories.
+${FRONTIER_GUIDE}
+Judge each technique on its own and answer for every index.`;
 
 export const MatchSchema = z.object({
   matches: z.array(

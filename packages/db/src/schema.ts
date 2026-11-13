@@ -9,6 +9,7 @@ import {
   pgTable,
   primaryKey,
   real,
+  smallint,
   text,
   timestamp,
   uniqueIndex,
@@ -197,6 +198,11 @@ export const techniques = pgTable(
     claims: jsonb("claims").$type<TechniqueClaims>().notNull(),
     embedding: vector("embedding", { dimensions: EMBEDDING_DIM }),
     novelty: real("novelty").notNull().default(0.5),
+    /**
+     * True for something new (an AI/ML method, model capability, agent pattern, research result), false for
+     * routine upkeep (a patch release, a deprecation, a database tip). Null until the model has classified it.
+     */
+    frontier: boolean("frontier"),
     legitimacy: jsonb("legitimacy").$type<GateResult>(),
     legitimacyScore: real("legitimacy_score"),
     firstSeenAt: timestamp("first_seen_at", { withTimezone: true }).notNull().defaultNow(),
@@ -263,6 +269,10 @@ export const recommendations = pgTable(
     /** Every lifecycle event applied, in order. `replay(history)` must equal `status` (T7). */
     history: jsonb("history").$type<RecommendationEvent[]>().notNull().default([]),
     decidedAt: timestamp("decided_at", { withTimezone: true }),
+    /** The user's vote: 1 like, -1 dislike, null none. It trains the ranking model and never changes `status`. */
+    feedback: smallint("feedback"),
+    /** When the vote last changed (also set when it is cleared, so the model knows to refit). */
+    feedbackAt: timestamp("feedback_at", { withTimezone: true }),
     createdAt: createdAt(),
     updatedAt: updatedAt(),
   },

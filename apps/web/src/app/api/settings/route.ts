@@ -1,6 +1,6 @@
 import { copilotLogin } from "@elevate/agent";
 import { deleteSecret, enqueue, getSecret, getSetting, setSecret, setSetting, audit } from "@elevate/db";
-import { accessProfile, autoMerge, DEFAULT_BUDGET, ECOSYSTEMS, ECOSYSTEM_LABEL, modelPrefs, recheckAccess, setAccessOverrides, publishAsMe, resetGitHubClient, resolveModelConfig, setModelPrefs, swarmBudget, thresholds } from "@elevate/engine";
+import { accessProfile, autoMerge, DEFAULT_BUDGET, ECOSYSTEMS, ECOSYSTEM_LABEL, learnerSummary, modelPrefs, recheckAccess, setAccessOverrides, setCuttingEdgeOnly, publishAsMe, resetGitHubClient, resolveModelConfig, setModelPrefs, swarmBudget, thresholds } from "@elevate/engine";
 import { ghAccountToken, GITHUB_ACCOUNT_SETTING, resolveGitHubToken } from "@elevate/github";
 import { NextResponse } from "next/server";
 import { z } from "zod";
@@ -68,6 +68,8 @@ export const GET = route(async (ctx) => {
     budget: await swarmBudget(ctx),
     publishAsMe: await publishAsMe(ctx),
     autoMerge: await autoMerge(ctx),
+    /** Votes and decisions the ranking has learned from, and whether routine upkeep is kept out. */
+    learner: await learnerSummary(ctx),
     defaults: { budget: DEFAULT_BUDGET },
   };
 });
@@ -89,6 +91,8 @@ const Put = z.object({
   publishAsMe: z.boolean().optional(),
   /** Merge swarm PRs once every check passed and GitHub can merge them. */
   autoMerge: z.boolean().optional(),
+  /** Recommend only cutting-edge techniques; routine upkeep (patch releases, database tips) stays on the Radar. */
+  cuttingEdgeOnly: z.boolean().optional(),
   /** true/false = the user's own switch; null = go back to what the connection implies. */
   access: z.partialRecord(z.enum(ECOSYSTEMS), z.boolean().nullable()).optional(),
 });
@@ -120,8 +124,9 @@ export const PUT = route(async (ctx, req) => {
   }
   if (p.budget) await setSetting(ctx.db, "swarm.budget", { ...(await getSetting(ctx.db, "swarm.budget", {})), ...p.budget });
   if (p.access) await setAccessOverrides(ctx, p.access);
-  // What the user can act on may have changed: pick up techniques that were held back.
-  if (p.access || p.model || p.executor) await recheckAccess(ctx);
+  if (p.cuttingEdgeOnly !== undefined) await setCuttingEdgeOnly(ctx, p.cuttingEdgeOnly);
+  // What the user can act on (or wants to hear about) may have changed: pick up techniques that were held back.
+  if (p.access || p.model || p.executor || p.cuttingEdgeOnly === false) await recheckAccess(ctx);
   const changed = Object.keys(p).map((k) => (k === "apiKey" || k === "githubToken" ? `${k}:${p[k as "apiKey"] ? "set" : "cleared"}` : k));
   await audit(ctx.db, "user", "settings.update", "settings", { changed });
   return { ok: true };

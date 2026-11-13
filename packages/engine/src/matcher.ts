@@ -3,6 +3,7 @@ import { and, emit, enqueue, eq, items, recommendations, repos, techniques } fro
 import { ECOSYSTEM_LABEL } from "@elevate/sources";
 import { accessProfile, verdictFor } from "./access";
 import type { Ctx } from "./context";
+import { cuttingEdgeOnly, isCuttingEdge } from "./frontier";
 import { watchedProfiledRepos } from "./profiler";
 import { MATCH_SYSTEM, MatchSchema } from "./prompts";
 
@@ -20,6 +21,8 @@ export async function matchTechnique(ctx: Ctx, techniqueId: string, onlyRepoIds?
   // Don't recommend what the user can't act on: a replaced model version, or a product they don't have.
   const access = await accessProfile(ctx);
   if (!verdictFor(tech, access).usable) return 0;
+  // Nor routine upkeep (a patch release, a database tip) while only cutting-edge ideas are wanted.
+  if ((await cuttingEdgeOnly(ctx)) && !isCuttingEdge(tech)) return 0;
 
   const existing = new Set(
     (await ctx.db.select({ repoId: recommendations.repoId }).from(recommendations).where(eq(recommendations.techniqueId, techniqueId))).map(
@@ -97,13 +100,14 @@ export async function matchTechnique(ctx: Ctx, techniqueId: string, onlyRepoIds?
 export async function matchRepo(ctx: Ctx, repoId: string, limit = 20) {
   const [repo] = await ctx.db.select({ tenantId: repos.tenantId }).from(repos).where(eq(repos.id, repoId));
   if (!repo) throw new Error(`Repo ${repoId} not found`);
+  const onlyCuttingEdge = await cuttingEdgeOnly(ctx);
   const passed = (
     await ctx.db
-      .select({ id: techniques.id, legitimacy: techniques.legitimacy, firstSeenAt: techniques.firstSeenAt })
+      .select({ id: techniques.id, name: techniques.name, summary: techniques.summary, frontier: techniques.frontier, legitimacy: techniques.legitimacy, firstSeenAt: techniques.firstSeenAt })
       .from(techniques)
       .where(and(eq(techniques.tenantId, repo.tenantId)))
   )
-    .filter((t) => t.legitimacy?.passed)
+    .filter((t) => t.legitimacy?.passed && (!onlyCuttingEdge || isCuttingEdge(t)))
     .sort((a, b) => b.firstSeenAt.getTime() - a.firstSeenAt.getTime())
     .slice(0, limit);
   let created = 0;

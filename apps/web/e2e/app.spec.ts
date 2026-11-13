@@ -1,12 +1,13 @@
 import { expect, test, type Page } from "@playwright/test";
 
-type Rec = { id: string; status: string; repo: string; title: string };
+type Rec = { id: string; status: string; repo: string; title: string; held: { kind: string } | null };
 
+/** Open recommendations waiting in Ready for review (held ones are under Filtered out). */
 async function waitForOpenRecs(page: Page): Promise<Rec[]> {
   let open: Rec[] = [];
   await expect
     .poll(async () => {
-      open = (await (await page.request.get("/api/recommendations?status=open")).json()) as Rec[];
+      open = ((await (await page.request.get("/api/recommendations?status=open")).json()) as Rec[]).filter((r) => !r.held);
       return open.length;
     }, { timeout: 90_000 })
     .toBeGreaterThan(0);
@@ -168,6 +169,44 @@ test("approve → allow repo → swarm → PR → verified → merge, with histo
   expect(after).toBe(409);
 });
 
+test("like or dislike a recommendation: a dislike moves it to Filtered out with the reason, and either vote can be taken back", async ({ page }) => {
+  const [rec] = await waitForOpenRecs(page);
+  const voted = () => page.waitForResponse((r) => r.url().endsWith(`/api/recommendations/${rec!.id}/feedback`) && r.ok());
+  await page.goto("/");
+  await expect(page.getByTestId("vote-hint")).toBeVisible();
+  const card = page.locator(`[data-testid="rec"][data-id="${rec!.id}"]`);
+
+  // A like scores it against what the ranking has learned; the toast's Undo takes it back.
+  let saved = voted();
+  await card.getByTestId("vote-like").click();
+  await saved;
+  await expect(card.getByTestId("vote-like")).toHaveAttribute("aria-pressed", "true");
+  await expect(card.getByTestId("fit")).toContainText(/\d+% your kind/);
+  saved = voted();
+  await page.getByRole("button", { name: "Undo" }).click();
+  await saved;
+  await expect(card.getByTestId("vote-like")).toHaveAttribute("aria-pressed", "false");
+
+  // A dislike moves it out of Ready for review, and Filtered out says why.
+  saved = voted();
+  await card.getByTestId("vote-dislike").click();
+  await saved;
+  await expect(card).toHaveCount(0);
+  await page.getByRole("tab", { name: /Filtered out/ }).click();
+  await expect(page).toHaveURL(/tab=filtered/);
+  await expect(card.getByTestId("held-reason")).toHaveAttribute("data-kind", "disliked");
+
+  // So does its page, where clicking the dislike again takes it back.
+  await page.goto(`/r/${rec!.id}`);
+  await expect(page.getByTestId("held-note")).toHaveAttribute("data-kind", "disliked");
+  saved = voted();
+  await page.getByTestId("vote-dislike").click();
+  await saved;
+  await expect(page.getByTestId("held-note")).toHaveCount(0);
+  await page.goto("/");
+  await expect(card.getByTestId("vote-dislike")).toHaveAttribute("aria-pressed", "false");
+});
+
 test("chat streams an answer with tool calls", async ({ page }) => {
   await page.goto("/chat");
   await page.getByLabel("Message").fill("What should I upgrade first?");
@@ -215,6 +254,27 @@ test("the auto-merge switch is where the PR panel's link points", async ({ page 
   const toggle = page.getByTestId("auto-merge");
   await expect(toggle).toHaveAttribute("aria-checked", "false");
   await expect(toggle).toBeInViewport();
+});
+
+test("Settings → Recommendations: cutting-edge only by default, what the ranking learned, its method, and forgetting it", async ({ page }) => {
+  await page.goto("/settings#recommendations");
+  const card = page.getByTestId("learner-card");
+  await expect(card).toBeInViewport();
+  await expect(page.getByTestId("cutting-edge-only")).toHaveAttribute("aria-checked", "true");
+  // The approval earlier in the suite counts at half weight; the votes were taken back.
+  const summary = page.getByTestId("learner-summary");
+  await expect(summary).toContainText(/Learned from 0 likes, 0 dislikes and (1 approval or rejection|\d+ approvals or rejections)\./);
+  await expect(card.getByRole("link", { name: "contextualbandits" })).toHaveAttribute("href", "https://github.com/david-cortes/contextualbandits");
+
+  // Forgetting asks first.
+  await page.getByTestId("learner-reset").click();
+  await expect(page.getByRole("dialog")).toContainText("Forget what elevate learned?");
+  await page.getByRole("button", { name: "Cancel" }).click();
+  await expect(summary).toContainText("Learned from");
+  await page.getByTestId("learner-reset").click();
+  await page.getByTestId("confirm-forget").click();
+  await expect(summary).toContainText("Nothing learned yet.");
+  await expect(page.getByTestId("learner-reset")).toBeDisabled();
 });
 
 test("repo search matches by stack and domain, keeps state in the URL, and filters", async ({ page }) => {
@@ -327,6 +387,20 @@ test("news the workspace can't use is set aside with the reason, and the filter 
   await expect(page.getByTestId("access-strip")).toContainText("GitHub Copilot");
   await page.goto("/");
   await expect(page.getByText(/GPT-5\.4|Codex cloud/)).toHaveCount(0);
+});
+
+test("routine upkeep stays on the Radar under its own tab and never becomes a recommendation", async ({ page }) => {
+  await waitForOpenRecs(page);
+  await page.goto("/radar?show=routine");
+  const pg = page.getByTestId("technique").filter({ hasText: /Postgres 17\.6/ });
+  await expect(pg).toHaveCount(1);
+  await expect(pg.getByTestId("routine-reason")).toBeVisible();
+  await expect(pg.getByRole("link", { name: "Change that" })).toHaveAttribute("href", "/settings#recommendations");
+  // It isn't left waiting under Checking either: routine upkeep skips the legitimacy review.
+  await page.goto("/radar?show=pending");
+  await expect(page.getByTestId("technique").filter({ hasText: /Postgres 17\.6/ })).toHaveCount(0);
+  const all = (await (await page.request.get("/api/recommendations")).json()) as Rec[];
+  expect(all.filter((r) => /Postgres/i.test(r.title))).toEqual([]);
 });
 
 test("switching a product on in Settings releases what was held for it", async ({ page }) => {

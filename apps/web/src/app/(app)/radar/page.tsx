@@ -1,4 +1,4 @@
-import { accessProfile, discoveryFeed, listSources, radar, searchPlan } from "@elevate/engine";
+import { accessProfile, cuttingEdgeOnly, discoveryFeed, listSources, radar, searchPlan } from "@elevate/engine";
 import { Rss, Satellite } from "lucide-react";
 import Link from "next/link";
 import { AccessStrip } from "@/components/access-strip";
@@ -15,20 +15,24 @@ export const dynamic = "force-dynamic";
 export default async function RadarPage({ searchParams }: { searchParams: Promise<{ show?: string }> }) {
   const { show } = await searchParams;
   const ctx = await getCtx();
-  const [techs, srcs, plan, feed, access] = await Promise.all([
+  const [techs, srcs, plan, feed, access, onlyCuttingEdge] = await Promise.all([
     radar(ctx),
     listSources(ctx),
     searchPlan(ctx),
     show === "feed" ? discoveryFeed(ctx, { limit: 150 }) : Promise.resolve([]),
     accessProfile(ctx),
+    cuttingEdgeOnly(ctx),
   ]);
   // Things the user can't act on (a replaced model version, a product they don't have) get their own tab.
   const setAside = techs.filter((t) => !t.access.usable);
   const usable = techs.filter((t) => t.access.usable);
-  const legit = usable.filter((t) => t.legitimacy?.passed);
-  const hype = usable.filter((t) => t.legitimacy && !t.legitimacy.passed);
-  const pending = usable.filter((t) => !t.legitimacy);
-  const list = show === "hype" ? hype : show === "pending" ? pending : show === "setaside" ? setAside : legit;
+  // So does routine upkeep while only cutting-edge ideas are wanted: it's tracked, never recommended.
+  const routine = onlyCuttingEdge ? usable.filter((t) => !t.cuttingEdge) : [];
+  const frontier = onlyCuttingEdge ? usable.filter((t) => t.cuttingEdge) : usable;
+  const legit = frontier.filter((t) => t.legitimacy?.passed);
+  const hype = frontier.filter((t) => t.legitimacy && !t.legitimacy.passed);
+  const pending = frontier.filter((t) => !t.legitimacy);
+  const list = show === "hype" ? hype : show === "pending" ? pending : show === "setaside" ? setAside : show === "routine" ? routine : legit;
 
   return (
     <div className="mx-auto max-w-5xl px-4 sm:px-8 py-10">
@@ -54,6 +58,7 @@ export default async function RadarPage({ searchParams }: { searchParams: Promis
           { k: undefined, label: "Legit", n: legit.length },
           { k: "hype", label: "Hype (filtered)", n: hype.length },
           { k: "pending", label: "Checking", n: pending.length },
+          ...(onlyCuttingEdge ? [{ k: "routine", label: "Routine upkeep", n: routine.length }] : []),
           { k: "setaside", label: "Not for your setup", n: setAside.length },
           { k: "feed", label: "Everything pulled in", n: undefined },
         ].map((t) => (
@@ -91,8 +96,15 @@ export default async function RadarPage({ searchParams }: { searchParams: Promis
         <TechniqueList
           key={show ?? "legit"}
           techniques={list}
-          emptyTitle={show === "setaside" ? "Nothing set aside" : "Nothing here yet"}
-          emptyHint={show === "setaside" ? "Everything on the radar is something you can use." : undefined}
+          routineHeld={show === "routine"}
+          emptyTitle={show === "setaside" ? "Nothing set aside" : show === "routine" ? "No routine upkeep" : "Nothing here yet"}
+          emptyHint={
+            show === "setaside"
+              ? "Everything on the radar is something you can use."
+              : show === "routine"
+                ? "Patch releases, deprecations and database tips land here instead of becoming recommendations."
+                : undefined
+          }
         />
       )}
     </div>

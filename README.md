@@ -20,6 +20,7 @@
 
 <p align="center">
   <a href="https://bakar404.github.io/elevate/">Website</a> ·
+  <a href="https://bakar404.github.io/elevate/#demo">Demo</a> ·
   <a href="#quick-start">Quick start</a> ·
   <a href="#how-it-works">How it works</a> ·
   <a href="#built-proof-first">Proof</a> ·

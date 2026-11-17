@@ -1,5 +1,5 @@
 import type { z } from "zod";
-import { createSession, modelConfigFromEnv, type ModelConfig } from "./copilot";
+import { createSession, modelConfigFromEnv, stopCopilotClient, type ModelConfig } from "./copilot";
 import { parseJsonReply, responseSchema } from "./schema";
 
 export type JsonRequest<T> = {
@@ -42,13 +42,37 @@ const clip = (s: string, n = 160) => {
   return t.length > n ? `${t.slice(0, n)}…` : t;
 };
 
+/** The Copilot runtime opens a session in well under a second; one that takes this long has stopped answering. */
+const SESSION_START_MS = 60_000;
+
+class SessionStartTimeout extends Error {}
+
 export class CopilotLLM implements LLM {
   readonly name = "copilot";
   constructor(private readonly config: ModelConfig = modelConfigFromEnv()) {}
 
   async json<T>(req: JsonRequest<T>): Promise<T> {
     const schema = responseSchema(req.schema);
-    const session = await createSession({ config: this.config, system: req.system });
+    const starting = createSession({ config: this.config, system: req.system });
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const session = await Promise.race([
+      starting,
+      new Promise<never>((_, reject) => {
+        timer = setTimeout(
+          () => reject(new SessionStartTimeout(`Copilot didn't open a session in ${SESSION_START_MS / 1000}s; restarting it`)),
+          SESSION_START_MS,
+        );
+      }),
+    ])
+      .catch((err) => {
+        if (err instanceof SessionStartTimeout) {
+          // Start a fresh runtime for the next call, and close this session if it opens after all.
+          void starting.then((s) => s.disconnect()).catch(() => {});
+          void stopCopilotClient();
+        }
+        throw err;
+      })
+      .finally(() => clearTimeout(timer));
     const ask = async (prompt: string) => {
       const reply = await session.sendAndWait({ prompt, responseSchema: schema.toJSONSchema() }, req.timeoutMs ?? 180_000);
       return reply?.data.content.trim() ?? "";
@@ -61,7 +85,8 @@ export class CopilotLLM implements LLM {
       if (value === undefined) throw new Error(`The model replied with text instead of JSON: "${clip(first)}"`);
       return schema.parse(value);
     } finally {
-      await session.disconnect().catch(() => {});
+      // Not awaited: the answer is in hand, and a runtime that never acknowledges the detach would hold the caller forever.
+      void session.disconnect().catch(() => {});
     }
   }
 }

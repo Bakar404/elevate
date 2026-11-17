@@ -61,10 +61,14 @@ export async function failJob(db: DB, job: ClaimedJob, error: unknown) {
   return retry;
 }
 
-/** Requeue jobs whose worker died mid-flight. */
-export async function recoverStaleJobs(db: DB, staleMinutes = 30) {
+/**
+ * Requeue jobs whose worker died mid-flight: any locked more than `staleMinutes` ago and, with
+ * `orphans` (this is the only worker, so nothing else can be running them), every other job left
+ * running too. Swarm jobs wait for the time limit either way; `resumeSwarms` picks those swarms up.
+ */
+export async function recoverStaleJobs(db: DB, staleMinutes = 30, orphans = false) {
   await db.execute(
-    sql`update jobs set status = 'queued' where status = 'running' and locked_at < now() - (${staleMinutes} || ' minutes')::interval`,
+    sql`update jobs set status = 'queued' where status = 'running' and (locked_at < now() - (${staleMinutes} || ' minutes')::interval${orphans ? sql` or type <> 'swarm.run'` : sql``})`,
   );
 }
 

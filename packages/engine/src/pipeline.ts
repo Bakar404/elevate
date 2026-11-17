@@ -43,23 +43,58 @@ export const HANDLERS: Record<string, Handler> = {
   "prs.track": (ctx, p) => trackPullRequests(ctx, { swarmId: typeof p.swarmId === "string" ? p.swarmId : undefined }),
 };
 
-export async function runJob(ctx: Ctx, job: ClaimedJob) {
+/** How long a job may run before the queue gives up on it and retries it later (ELEVATE_JOB_TIMEOUT_MINUTES, default 30). */
+export function jobTimeoutMs() {
+  const n = Number(process.env.ELEVATE_JOB_TIMEOUT_MINUTES);
+  return (Number.isFinite(n) && n > 0 ? n : 30) * 60_000;
+}
+
+class JobTimeout extends Error {}
+
+const span = (ms: number) => (ms >= 60_000 ? `${Math.round(ms / 60_000)} minutes` : `${Math.round(ms / 1000)} seconds`);
+
+/**
+ * Runs one job and records how it went. Jobs run one at a time, so a call that never answers would
+ * hold up every job behind it: past `timeoutMs` the job is failed (and retried) and the queue moves
+ * on. Swarms are exempt; they run alongside the queue under their own budget.
+ */
+export async function runJob(ctx: Ctx, job: ClaimedJob, timeoutMs = job.type === "swarm.run" ? 0 : jobTimeoutMs()) {
   const handler = HANDLERS[job.type];
+  let timer: ReturnType<typeof setTimeout> | undefined;
   try {
     if (!handler) throw new Error(`No handler for job type ${job.type}`);
-    await handler(ctx, job.payload, job);
+    const work = handler(ctx, job.payload, job);
+    if (timeoutMs > 0) {
+      const limit = new Promise<never>((_, reject) => {
+        timer = setTimeout(() => reject(new JobTimeout(`didn't finish in ${span(timeoutMs)}`)), timeoutMs);
+      });
+      await Promise.race([work, limit]);
+    } else {
+      await work;
+    }
     await completeJob(ctx.db, job.id);
   } catch (err) {
     const retrying = await failJob(ctx.db, job, err);
+    const reason = (err instanceof Error ? err.message : String(err)).slice(0, 300);
     if (!retrying) {
       await emit(ctx.db, {
         kind: "job.failed",
         level: "error",
-        message: `${job.type} failed: ${(err instanceof Error ? err.message : String(err)).slice(0, 300)}`,
+        message: `${job.type} failed: ${reason}`,
+        data: { jobId: job.id },
+        tenantId: job.tenantId,
+      });
+    } else if (err instanceof JobTimeout) {
+      await emit(ctx.db, {
+        kind: "job.timeout",
+        level: "warn",
+        message: `${job.type} ${reason}, so the queue moved on. It runs again shortly.`,
         data: { jobId: job.id },
         tenantId: job.tenantId,
       });
     }
+  } finally {
+    clearTimeout(timer);
   }
 }
 
@@ -102,7 +137,9 @@ export function startWorker(ctx: Ctx, opts: { pollMs?: number; maxSwarms?: numbe
   const idleWaiters: (() => void)[] = [];
 
   const loop = (async () => {
-    await recoverStaleJobs(ctx.db);
+    // PGlite lets one process open a data dir, so a job still marked running was left by a process that's gone.
+    // Requeue it now: until then its dedupe key would hold back the next one (a sweep, say).
+    await recoverStaleJobs(ctx.db, 30, !process.env.DATABASE_URL);
     await resumeSwarms(ctx).catch((err) => console.error("resumeSwarms failed", err));
     let lastTick = 0;
     while (!stopped) {
@@ -119,11 +156,15 @@ export function startWorker(ctx: Ctx, opts: { pollMs?: number; maxSwarms?: numbe
         });
         continue;
       }
+      // runJob records a job's own failure; this catches the rarer case where recording it failed, which would otherwise stop the worker.
+      const crashed = (err: unknown) => console.error(`Worker: ${job.type} job ${job.id} couldn't be recorded`, err);
       if (job.type === "swarm.run") {
-        const p: Promise<void> = runJob(ctx, job).finally(() => swarmsRunning.delete(p));
+        const p: Promise<void> = runJob(ctx, job)
+          .catch(crashed)
+          .finally(() => swarmsRunning.delete(p));
         swarmsRunning.add(p);
       } else {
-        await runJob(ctx, job);
+        await runJob(ctx, job).catch(crashed);
       }
     }
     await Promise.allSettled([...swarmsRunning]);

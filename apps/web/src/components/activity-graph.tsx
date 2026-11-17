@@ -6,17 +6,11 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useMemo, useState } from "react";
 import { toast } from "sonner";
+import { CX, CY, H, layout, linkPath, particleBudget, REPO, TECH, W } from "@/lib/graph-layout";
 import { setMotionPref, useMotionPref, usePrefersReducedMotion } from "@/lib/motion";
 import type { LogoVariant } from "@/lib/prefs";
 import { cn } from "@/lib/utils";
 import { LogoMark } from "./logo";
-
-const W = 760;
-const H = 360;
-const CX = W / 2;
-const CY = H / 2;
-const REPO = { rx: 205, ry: 108 };
-const TECH = { rx: 330, ry: 150 };
 
 const STATE_COLOR = { working: "var(--color-sky)", review: "var(--color-olive)", watched: "var(--color-cloud)" } as const;
 const LINK_STYLE: Record<string, { color: string; dash?: string; speed?: number; particles: number }> = {
@@ -26,54 +20,11 @@ const LINK_STYLE: Record<string, { color: string; dash?: string; speed?: number;
   in_progress: { color: "var(--color-sky)", speed: 1.6, particles: 2 },
   pr_opened: { color: "var(--color-sand)", particles: 0 },
 };
-
-type Pos = { x: number; y: number; a: number };
-/** Node's and the browser's Math.sin/cos can differ in the last digit; rounding keeps server and client markup identical. */
-const round = (v: number) => Math.round(v * 100) / 100;
-const onEllipse = (a: number, e: { rx: number; ry: number }): Pos => ({ x: round(CX + Math.cos(a) * e.rx), y: round(CY + Math.sin(a) * e.ry), a });
-const short = (s: string, n: number) => (s.length > n ? `${s.slice(0, n - 1)}…` : s);
-const clamp = (v: number, lo: number, hi: number) => Math.min(hi, Math.max(lo, v));
-
-/** Spread angles so no two sit closer than `gap` radians, keeping their order. */
-function spread(angles: { id: string; a: number }[], gap: number) {
-  const sorted = [...angles].sort((p, q) => p.a - q.a);
-  for (let pass = 0; pass < 8; pass++) {
-    for (let i = 1; i < sorted.length; i++) {
-      const d = sorted[i]!.a - sorted[i - 1]!.a;
-      if (d < gap) {
-        sorted[i - 1]!.a -= (gap - d) / 2;
-        sorted[i]!.a += (gap - d) / 2;
-      }
-    }
-  }
-  return new Map(sorted.map((s) => [s.id, s.a]));
-}
-
-function layout(g: Graph) {
-  const n = Math.max(g.repos.length, 1);
-  const repoPos = new Map(g.repos.map((r, i) => [r.id, onEllipse(-Math.PI / 2 + (i * 2 * Math.PI) / n, REPO)]));
-  const techAngles = g.techniques.map((t) => {
-    // Circular mean of the repos this technique touches, so links stay short.
-    const linked = g.links.filter((l) => l.techniqueId === t.id).map((l) => repoPos.get(l.repoId)!.a);
-    const a = Math.atan2(
-      linked.reduce((s, x) => s + Math.sin(x), 0),
-      linked.reduce((s, x) => s + Math.cos(x), 0),
-    );
-    return { id: t.id, a };
-  });
-  const angles = spread(techAngles, (2 * Math.PI) / Math.max(10, g.techniques.length * 1.4));
-  const techPos = new Map(g.techniques.map((t) => [t.id, onEllipse(angles.get(t.id) ?? 0, TECH)]));
-  return { repoPos, techPos };
-}
-
-/** Curve from a technique into a repo, bowed toward the hub. */
-function linkPath(from: Pos, to: Pos) {
-  const mx = (from.x + to.x) / 2;
-  const my = (from.y + to.y) / 2;
-  const qx = mx + (CX - mx) * 0.3;
-  const qy = my + (CY - my) * 0.3;
-  return `M${from.x.toFixed(1)},${from.y.toFixed(1)} Q${qx.toFixed(1)},${qy.toFixed(1)} ${to.x.toFixed(1)},${to.y.toFixed(1)}`;
-}
+const styleFor = (status: string) => LINK_STYLE[status] ?? LINK_STYLE.open!;
+/** Past this many links the waiting ones fade back, so the work in flight stands out. */
+const BUSY = 20;
+/** An outline in the page colour behind each label, so names stay readable where links cross them. */
+const HALO = { stroke: "var(--color-bg)", strokeWidth: 3, strokeOpacity: 0.85, strokeLinejoin: "round", paintOrder: "stroke" } as const;
 
 function Particle({ d, color, dur, begin, r = 2.2 }: { d: string; color: string; dur: number; begin: number; r?: number }) {
   return (
@@ -97,7 +48,9 @@ export function ActivityGraph({ data, logo }: { data: Graph; logo?: LogoVariant 
   const paused = reduce && motionPref === "system";
   const router = useRouter();
   const [hover, setHover] = useState<string | null>(null);
-  const { repoPos, techPos } = useMemo(() => layout(data), [data]);
+  const { repoPos, techPos, repoLabels, techLabels } = useMemo(() => layout(data), [data]);
+  const dots = useMemo(() => particleBudget(data.links, (s) => styleFor(s).particles), [data.links]);
+  const busy = data.links.length > BUSY;
 
   const lit = useMemo(() => {
     if (!hover) return null;
@@ -126,7 +79,13 @@ export function ActivityGraph({ data, logo }: { data: Graph; logo?: LogoVariant 
         <Legend color="var(--color-sky)" label={`${counts.working} being worked on`} pulse={counts.working > 0} />
         <Legend color="var(--color-olive)" label={`${counts.review} awaiting review`} />
         <Legend color="var(--color-cloud)" label={`${counts.watched} watched`} />
-        <Legend color="var(--color-sand)" label={`${data.techniques.length} matched technique${data.techniques.length === 1 ? "" : "s"}`} square />
+        {data.hiddenTechniques > 0 ? (
+          <Link href="/radar" title="The map shows the techniques with work in flight and the most matches. See them all on Radar." className="transition-colors hover:text-fg">
+            <Legend color="var(--color-sand)" label={`${data.techniques.length} of ${data.techniques.length + data.hiddenTechniques} matched techniques`} square />
+          </Link>
+        ) : (
+          <Legend color="var(--color-sand)" label={`${data.techniques.length} matched technique${data.techniques.length === 1 ? "" : "s"}`} square />
+        )}
         {(paused || data.hidden > 0) && (
           <span className="ml-auto flex items-center gap-x-4">
             {paused && (
@@ -212,24 +171,26 @@ export function ActivityGraph({ data, logo }: { data: Graph; logo?: LogoVariant 
             const to = repoPos.get(l.repoId);
             if (!from || !to) return null;
             const d = linkPath(from, to);
-            const s = LINK_STYLE[l.status] ?? LINK_STYLE.open!;
+            const s = styleFor(l.status);
+            const waiting = l.status === "open" || l.status === "candidate";
+            const n = dots.get(l.id) ?? 0;
             return (
               <g key={l.id} style={{ opacity: dim(l.id), transition: "opacity 200ms" }}>
                 <motion.path
                   d={d}
                   stroke={s.color}
-                  strokeOpacity={0.55}
-                  strokeWidth={1.2}
+                  strokeOpacity={busy && waiting ? 0.3 : 0.55}
+                  strokeWidth={busy && !waiting ? 1.6 : 1.2}
                   strokeDasharray={s.dash}
                   className={s.dash && !reduce ? "graph-march" : undefined}
                   fill="none"
                   initial={reduce ? false : { pathLength: 0, opacity: 0 }}
                   animate={{ pathLength: 1, opacity: 1 }}
-                  transition={{ duration: 0.8, delay: 0.5 + i * 0.05, ease: [0.23, 1, 0.32, 1] }}
+                  transition={{ duration: 0.8, delay: 0.5 + Math.min(i, 24) * 0.05, ease: [0.23, 1, 0.32, 1] }}
                 />
                 {!reduce &&
-                  Array.from({ length: s.particles }, (_, k) => (
-                    <Particle key={k} d={d} color={s.color} dur={s.speed!} begin={(k * s.speed!) / s.particles + (i % 5) * 0.3} />
+                  Array.from({ length: n }, (_, k) => (
+                    <Particle key={k} d={d} color={s.color} dur={s.speed!} begin={(k * s.speed!) / n + (i % 5) * 0.3} />
                   ))}
               </g>
             );
@@ -243,8 +204,7 @@ export function ActivityGraph({ data, logo }: { data: Graph; logo?: LogoVariant 
 
           {data.techniques.map((t, i) => {
             const p = techPos.get(t.id)!;
-            const above = p.y < CY;
-            const lx = clamp(p.x, 80, W - 80);
+            const label = techLabels.get(t.id);
             return (
               <g key={t.id} style={{ opacity: dim(t.id), transition: "opacity 200ms" }}>
               <motion.g
@@ -259,9 +219,11 @@ export function ActivityGraph({ data, logo }: { data: Graph; logo?: LogoVariant 
                 <title>{`${t.name}${t.category ? ` · ${t.category}` : ""}`}</title>
                 <rect x={p.x - 5} y={p.y - 5} width={10} height={10} rx={2.5} transform={`rotate(45 ${p.x} ${p.y})`} fill="var(--color-bg)" stroke="var(--color-sand)" strokeWidth={1.5} />
                 <rect x={p.x - 2} y={p.y - 2} width={4} height={4} rx={1} transform={`rotate(45 ${p.x} ${p.y})`} fill="var(--color-sand)" />
-                <text x={lx} y={above ? p.y - 13 : p.y + 21} textAnchor="middle" fontSize={11} fill="var(--color-sand)" fillOpacity={0.85}>
-                  {short(t.name, 24)}
-                </text>
+                {label && (
+                  <text x={label.x} y={label.y} textAnchor={label.anchor} fontSize={11} fill="var(--color-sand)" fillOpacity={0.85} {...HALO}>
+                    {label.text}
+                  </text>
+                )}
               </motion.g>
               </g>
             );
@@ -270,10 +232,7 @@ export function ActivityGraph({ data, logo }: { data: Graph; logo?: LogoVariant 
           {data.repos.map((r, i) => {
             const p = repoPos.get(r.id)!;
             const color = STATE_COLOR[r.state];
-            const c = Math.cos(p.a);
-            const anchor = c > 0.35 ? "start" : c < -0.35 ? "end" : "middle";
-            const lx = round(p.x + c * 14);
-            const ly = round(p.y + Math.sin(p.a) * 16 + 4);
+            const label = repoLabels.get(r.id)!;
             return (
               <g key={r.id} style={{ opacity: dim(r.id), transition: "opacity 200ms" }}>
               <motion.g
@@ -294,8 +253,8 @@ export function ActivityGraph({ data, logo }: { data: Graph; logo?: LogoVariant 
                 )}
                 <circle cx={p.x} cy={p.y} r={r.state === "watched" ? 4.5 : 6} fill="var(--color-bg)" stroke={color} strokeWidth={1.6} strokeOpacity={r.state === "watched" ? 0.6 : 1} />
                 <circle cx={p.x} cy={p.y} r={r.state === "watched" ? 1.6 : 2.6} fill={color} fillOpacity={r.state === "watched" ? 0.7 : 1} />
-                <text x={lx} y={ly} textAnchor={anchor} fontSize={11.5} fill={r.state === "watched" ? "var(--color-muted)" : "var(--color-fg)"} className="font-mono">
-                  {short(r.name, 20)}
+                <text x={label.x} y={label.y} textAnchor={label.anchor} fontSize={11.5} fill={r.state === "watched" ? "var(--color-muted)" : "var(--color-fg)"} className="font-mono" {...HALO}>
+                  {label.text}
                   {r.open > 0 && <tspan fill="var(--color-olive)">{` ${r.open}`}</tspan>}
                 </text>
               </motion.g>

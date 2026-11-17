@@ -46,6 +46,10 @@ Every table has a `tenant_id`, which is `local` for now.
 | `swarm.run` | Plan the DAG, run it on the chosen executor through the guard, open a draft PR | `pr_opened` and `prs.track`, or `failed` |
 | `prs.track` | Every 2 minutes (`ELEVATE_PR_MINUTES`), and right after a swarm opens its PR: read each swarm PR's state, checks and mergeability, store it on the swarm, and follow merges, closes and reopens made on GitHub. With auto-merge on, merge the PRs that are verified | `merged` or `closed` |
 
+### Keeping the queue moving
+
+The worker runs one job at a time, except `swarm.run`, which runs alongside (up to 3) under its own time budget. So that one stuck call can't hold up everything behind it, a job that hasn't finished after `ELEVATE_JOB_TIMEOUT_MINUTES` (30) is let go and retried with backoff like any failure, and the feed says so (`job.timeout`). Starting a Copilot session is given 60 seconds; past that the runtime is restarted for the next call. When the worker starts, jobs an earlier process left running are queued again: with PGlite, which allows only one process per data dir, that is every job but `swarm.run` (swarms resume on their own); with Postgres, only those locked more than 30 minutes ago, since another worker may still own the rest.
+
 ### Catching up on reviews
 
 `reviewDue` (`packages/engine/src/access.ts`) runs at the end of every sweep and queues at most `REVIEW_BATCH` (30) reviews, in this order:

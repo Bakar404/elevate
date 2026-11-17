@@ -283,14 +283,18 @@ export async function activityGraph(ctx: Ctx, maxRepos = 12, maxTechniques = 8) 
   const shown = ranked.slice(0, maxRepos);
   const shownIds = new Set(shown.map((r) => r.id));
 
-  const techCount = new Map<string, { id: string; name: string; category: string | null; n: number }>();
+  // In-flight work first, so the map always draws what a swarm is working on; then the techniques with the most links.
+  const weight = (status: string) => (status === "approved" || status === "in_progress" ? 3 : status === "pr_opened" ? 2 : status === "open" ? 1 : 0);
+  const techCount = new Map<string, { id: string; name: string; category: string | null; n: number; top: number; best: number }>();
   for (const l of live) {
     if (!shownIds.has(l.repoId)) continue;
-    const t = techCount.get(l.techniqueId) ?? { id: l.techniqueId, name: l.technique, category: l.category, n: 0 };
+    const t = techCount.get(l.techniqueId) ?? { id: l.techniqueId, name: l.technique, category: l.category, n: 0, top: 0, best: 0 };
     t.n++;
+    t.top = Math.max(t.top, weight(l.status));
+    t.best = Math.max(t.best, l.score ?? 0);
     techCount.set(l.techniqueId, t);
   }
-  const techs = [...techCount.values()].sort((a, b) => b.n - a.n).slice(0, maxTechniques);
+  const techs = [...techCount.values()].sort((a, b) => b.top - a.top || b.n - a.n || b.best - a.best).slice(0, maxTechniques);
   const techIds = new Set(techs.map((t) => t.id));
 
   return {
@@ -308,6 +312,8 @@ export async function activityGraph(ctx: Ctx, maxRepos = 12, maxTechniques = 8) 
       .filter((l) => shownIds.has(l.repoId) && techIds.has(l.techniqueId))
       .map((l) => ({ id: l.id, repoId: l.repoId, techniqueId: l.techniqueId, status: l.status, score: l.score })),
     hidden: Math.max(0, ranked.length - shown.length),
+    /** Matched techniques left off the map to keep it legible. */
+    hiddenTechniques: techCount.size - techs.length,
   };
 }
 

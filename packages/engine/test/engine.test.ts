@@ -1,5 +1,5 @@
 import { ContentFiltered, HashingEmbedder } from "@elevate/agent";
-import { auditLog, createDb, enqueue, eq, inArray, items, recommendations, repos, setSetting, sources, swarms, swarmTasks, techniques } from "@elevate/db";
+import { auditLog, claimJob, createDb, enqueue, eq, events, inArray, items, jobs, recommendations, repos, setSetting, sources, swarms, swarmTasks, techniques } from "@elevate/db";
 import { FakeGitHub } from "@elevate/executors";
 import { replay } from "@elevate/policy";
 import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from "vitest";
@@ -13,6 +13,7 @@ import {
   demoLLM,
   discoveryFeed,
   drain,
+  HANDLERS,
   LifecycleError,
   learnerSummary,
   listSwarms,
@@ -27,6 +28,7 @@ import {
   seedDemo,
   setCuttingEdgeOnly,
   setFeedback,
+  startWorker,
   stats,
   chat,
   createThread,
@@ -35,6 +37,7 @@ import {
   threadMessages,
   trackPullRequests,
   retryFailedTriage,
+  runJob,
   triageItems,
   TRIAGE_TRIES,
   type Ctx,
@@ -110,6 +113,22 @@ describe("approval and swarm", () => {
     const busy = await activityGraph(ctx);
     expect(busy.repos[0]).toMatchObject({ fullName: r!.repo, state: "working" });
     expect(busy.links.find((l) => l.id === r!.rec.id)?.status).toBe("approved");
+    // With room for one technique, the map draws the one being worked on, even when another has more links.
+    const linked = new Set((await ctx.db.select({ t: recommendations.techniqueId }).from(recommendations)).map((x) => x.t));
+    const [unlinked] = (await ctx.db.select({ id: techniques.id }).from(techniques)).filter((t) => !linked.has(t.id));
+    const watched = await ctx.db.select({ id: repos.id }).from(repos).where(eq(repos.watch, true));
+    const { id: _id, ...row } = r!.rec;
+    const extra = await ctx.db
+      .insert(recommendations)
+      .values(watched.map((w) => ({ ...row, repoId: w.id, techniqueId: unlinked!.id, status: "candidate" as const, history: [], feedback: null, decidedAt: null })))
+      .returning({ id: recommendations.id });
+    try {
+      const tight = await activityGraph(ctx, 12, 1);
+      expect(tight.techniques.map((t) => t.id)).toEqual([r!.rec.techniqueId]);
+      expect(tight.hiddenTechniques).toBeGreaterThan(0);
+    } finally {
+      await ctx.db.delete(recommendations).where(inArray(recommendations.id, extra.map((e) => e.id)));
+    }
     await drain(ctx);
     const idle = (await activityGraph(ctx)).repos.find((x) => x.fullName === r!.repo);
     expect(idle).toMatchObject({ state: expect.not.stringMatching("working"), prs: 1 });
@@ -616,6 +635,47 @@ describe("only cutting-edge ideas (the default)", () => {
     } finally {
       await setCuttingEdgeOnly(ctx, true);
       await ctx.db.delete(recommendations).where(eq(recommendations.id, rec!.id));
+    }
+  });
+});
+
+describe("the worker", () => {
+  it("gives up on a job that never finishes, so the jobs behind it still run, and retries it later", async () => {
+    await drain(ctx);
+    HANDLERS["test.stuck"] = () => new Promise(() => {});
+    const id = (await enqueue(ctx.db, "test.stuck"))!;
+    try {
+      const job = (await claimJob(ctx.db))!;
+      expect(job.id).toBe(id);
+      await runJob(ctx, job, 50);
+
+      const [row] = await ctx.db.select().from(jobs).where(eq(jobs.id, id));
+      expect(row).toMatchObject({ status: "queued", attempts: 1, lastError: expect.stringContaining("didn't finish") });
+      expect(row!.runAt.getTime()).toBeGreaterThan(Date.now());
+      const warned = await ctx.db.select().from(events).where(eq(events.kind, "job.timeout"));
+      expect(warned.find((e) => e.data?.jobId === id)).toMatchObject({ level: "warn" });
+    } finally {
+      delete HANDLERS["test.stuck"];
+      await ctx.db.delete(jobs).where(eq(jobs.id, id));
+    }
+  });
+
+  it("on start, runs again a job the last process left running, rather than holding its dedupe key", async () => {
+    await drain(ctx);
+    let ran = 0;
+    HANDLERS["test.orphan"] = async () => {
+      ran++;
+    };
+    const id = (await enqueue(ctx.db, "test.orphan", {}, { dedupeKey: "test.orphan" }))!;
+    await ctx.db.update(jobs).set({ status: "running", lockedAt: new Date(), attempts: 1 }).where(eq(jobs.id, id));
+    const worker = startWorker(ctx, { pollMs: 20 });
+    try {
+      await worker.idle();
+      expect(ran).toBe(1);
+      expect((await ctx.db.select().from(jobs).where(eq(jobs.id, id)))[0]?.status).toBe("done");
+    } finally {
+      await worker.stop();
+      delete HANDLERS["test.orphan"];
     }
   });
 });

@@ -28,6 +28,11 @@ export async function swarmBudget(ctx: Ctx): Promise<SwarmBudget> {
   return { ...DEFAULT_BUDGET, ...(await getSetting<Partial<SwarmBudget>>(ctx.db, "swarm.budget", {})) };
 }
 
+/** Settings → Default executor: what the approve dialog starts on. */
+export async function defaultExecutor(ctx: Ctx): Promise<ExecutorKind> {
+  return getSetting<ExecutorKind>(ctx.db, "executor.default", ctx.demo ? "fake" : "copilot-cloud");
+}
+
 export class ApprovalError extends Error {
   constructor(message: string) {
     super(message);

@@ -148,6 +148,10 @@ test("approve → allow repo → swarm → PR → verified → merge, with histo
   await expect(page.getByTestId("pr-link")).toHaveAttribute("href", /\/pull\//);
   await expect(page.getByTestId("task-graph")).toBeVisible();
   await expect(page.getByTestId("audits")).toContainText(rec!.repo);
+  // The log follows new lines inside its own box, so opening a swarm keeps you at its header.
+  await expect(page.getByTestId("swarm-log")).toBeVisible();
+  await page.evaluate(() => new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r))));
+  expect(await page.evaluate(() => window.scrollY)).toBe(0);
 
   // elevate follows the PR. The fake's CI passes, so it's verified and waits for your Merge (auto-merge is off).
   const panel = page.getByTestId("pr-panel");
@@ -167,6 +171,27 @@ test("approve → allow repo → swarm → PR → verified → merge, with histo
 
   const after = (await (await page.request.post(`/api/recommendations/${rec!.id}/approve`, { data: { executor: "fake" }, headers: { origin: new URL(page.url()).origin } })).status());
   expect(after).toBe(409);
+});
+
+test("the approve dialog starts on the default executor chosen in Settings", async ({ page }) => {
+  const [rec] = await waitForOpenRecs(page);
+  const pick = async (executor: string) => {
+    await page.goto("/settings");
+    await page.getByLabel("Default executor").selectOption(executor);
+    const saved = page.waitForResponse((r) => r.url().endsWith("/api/settings") && r.request().method() === "PUT");
+    await page.getByRole("button", { name: "Save", exact: true }).click();
+    expect((await saved).ok()).toBe(true);
+  };
+  await pick("copilot-cloud");
+  try {
+    await page.goto(`/r/${rec!.id}`);
+    await page.getByTestId("approve").click();
+    await expect(page.getByRole("radio", { name: /Copilot coding agent/ })).toHaveAttribute("aria-checked", "true");
+    await expect(page.getByRole("radio", { name: /Simulated swarm/ })).toHaveAttribute("aria-checked", "false");
+    await page.getByRole("button", { name: "Cancel" }).click();
+  } finally {
+    await pick("fake");
+  }
 });
 
 test("like or dislike a recommendation: a dislike moves it to Filtered out with the reason, and either vote can be taken back", async ({ page }) => {

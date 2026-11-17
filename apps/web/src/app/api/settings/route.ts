@@ -1,6 +1,6 @@
 import { copilotLogin } from "@elevate/agent";
 import { deleteSecret, enqueue, getSecret, getSetting, setSecret, setSetting, audit } from "@elevate/db";
-import { accessProfile, autoMerge, DEFAULT_BUDGET, ECOSYSTEMS, ECOSYSTEM_LABEL, learnerSummary, modelPrefs, recheckAccess, setAccessOverrides, setCuttingEdgeOnly, publishAsMe, resetGitHubClient, resolveModelConfig, setModelPrefs, swarmBudget, thresholds } from "@elevate/engine";
+import { accessProfile, autoMerge, DEFAULT_BUDGET, defaultExecutor, ECOSYSTEMS, ECOSYSTEM_LABEL, learnerSummary, modelPrefs, recheckAccess, setAccessOverrides, setCuttingEdgeOnly, publishAsMe, resetGitHubClient, resolveModelConfig, setModelPrefs, swarmBudget, thresholds } from "@elevate/engine";
 import { ghAccountToken, GITHUB_ACCOUNT_SETTING, resolveGitHubToken } from "@elevate/github";
 import { NextResponse } from "next/server";
 import { z } from "zod";
@@ -63,7 +63,7 @@ export const GET = route(async (ctx) => {
     models: await modelPrefs(ctx),
     github: await githubStatus(ctx),
     copilot: await copilotStatus(ctx, model),
-    executor: await getSetting(ctx.db, "executor.default", ctx.demo ? "fake" : "copilot-cloud"),
+    executor: await defaultExecutor(ctx),
     thresholds: await thresholds(ctx),
     budget: await swarmBudget(ctx),
     publishAsMe: await publishAsMe(ctx),

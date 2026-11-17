@@ -69,7 +69,9 @@ type Ev = { id: number; kind: string; level: string; message: string; swarmId: s
 /** Starts from the server-rendered log, then appends live events for this swarm. */
 export function SwarmLog({ swarmId, initial }: { swarmId: string; initial: Ev[] }) {
   const [rows, setRows] = useState(initial);
-  const end = useRef<HTMLDivElement>(null);
+  const box = useRef<HTMLDivElement>(null);
+  // Follow new lines while the reader is at the bottom; scrolling up to read earlier ones stops that.
+  const following = useRef(true);
   useEffect(() => setRows(initial), [initial]);
   useEffect(() => {
     const on = (e: Event) => {
@@ -81,11 +83,21 @@ export function SwarmLog({ swarmId, initial }: { swarmId: string; initial: Ev[] 
     return () => window.removeEventListener("elevate:event", on);
   }, [swarmId]);
   useEffect(() => {
-    end.current?.scrollIntoView({ block: "nearest" });
+    // Scroll the log's own box. scrollIntoView would also scroll the page and pull it away from the header.
+    const el = box.current;
+    if (el && following.current) el.scrollTop = el.scrollHeight;
   }, [rows.length]);
   const color: Record<string, string> = { info: "text-muted", success: "text-olive", warn: "text-sand", error: "text-danger" };
   return (
-    <div className="max-h-80 overflow-y-auto rounded-xl border border-line bg-bg/60 p-3 font-mono text-xs leading-relaxed" data-testid="swarm-log">
+    <div
+      ref={box}
+      onScroll={(e) => {
+        const el = e.currentTarget;
+        following.current = el.scrollHeight - el.scrollTop - el.clientHeight < 24;
+      }}
+      className="max-h-80 overflow-y-auto rounded-xl border border-line bg-bg/60 p-3 font-mono text-xs leading-relaxed"
+      data-testid="swarm-log"
+    >
       {rows.length === 0 && <div className="text-faint">Waiting for the first event…</div>}
       {rows.map((e) => (
         <div key={e.id} className={color[e.level] ?? "text-muted"}>
@@ -93,7 +105,6 @@ export function SwarmLog({ swarmId, initial }: { swarmId: string; initial: Ev[] 
           {e.message}
         </div>
       ))}
-      <div ref={end} />
     </div>
   );
 }

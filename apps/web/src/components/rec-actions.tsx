@@ -7,7 +7,23 @@ import { toast } from "sonner";
 import { EXECUTORS, cn, send } from "@/lib/utils";
 import { Button, Dialog, Switch } from "./ui";
 
-export function RecActions({ id, status, repo, allowSwarm, autoMerge, demo }: { id: string; status: string; repo: string; allowSwarm: boolean; autoMerge: boolean; demo: boolean }) {
+export function RecActions({
+  id,
+  status,
+  repo,
+  allowSwarm,
+  autoMerge,
+  executor,
+  demo,
+}: {
+  id: string;
+  status: string;
+  repo: string;
+  allowSwarm: boolean;
+  autoMerge: boolean;
+  executor: string;
+  demo: boolean;
+}) {
   const router = useRouter();
   const [open, setOpen] = useState(false);
   const act = (action: string, label: string, data: unknown = {}) =>
@@ -43,7 +59,7 @@ export function RecActions({ id, status, repo, allowSwarm, autoMerge, demo }: { 
           <RotateCcw /> Re-verify
         </Button>
       )}
-      <ApproveDialog open={open} onOpenChange={setOpen} id={id} repo={repo} allowSwarm={allowSwarm} autoMerge={autoMerge} demo={demo} onDone={() => router.refresh()} />
+      <ApproveDialog open={open} onOpenChange={setOpen} id={id} repo={repo} allowSwarm={allowSwarm} autoMerge={autoMerge} executor={executor} demo={demo} onDone={() => router.refresh()} />
     </div>
   );
 }
@@ -55,6 +71,7 @@ function ApproveDialog({
   repo,
   allowSwarm,
   autoMerge,
+  executor: preferred,
   demo,
   onDone,
 }: {
@@ -64,11 +81,12 @@ function ApproveDialog({
   repo: string;
   allowSwarm: boolean;
   autoMerge: boolean;
+  executor: string;
   demo: boolean;
   onDone: () => void;
 }) {
   const options = demo ? [{ id: "fake", label: "Simulated swarm", detail: "Demo mode: runs the full plan without touching GitHub." }, ...EXECUTORS] : EXECUTORS;
-  const [executor, setExecutor] = useState<string>(options[0]!.id);
+  const [executor, setExecutor] = useState<string>(options.some((o) => o.id === preferred) ? preferred : options[0]!.id);
   const [allowRepo, setAllowRepo] = useState(allowSwarm);
   const [busy, setBusy] = useState(false);
 

@@ -105,7 +105,7 @@ export default async function RecommendationPage({ params }: { params: Promise<{
       )}
 
       <div className="mt-6">
-        <RecActions id={r.id} status={r.status} repo={r.repo} allowSwarm={r.allowSwarm} autoMerge={r.autoMerge} demo={ctx.demo} />
+        <RecActions id={r.id} status={r.status} repo={r.repo} allowSwarm={r.allowSwarm} autoMerge={r.autoMerge} executor={r.executor} demo={ctx.demo} />
       </div>
 
       {r.pr && (

@@ -6,6 +6,7 @@ import { judgeRecs, subjectColumns, type Judgement } from "./feedback";
 import { cuttingEdgeOnly, isCuttingEdge } from "./frontier";
 import { focusQueries, TRIAGE_TRIES } from "./ingest";
 import { autoMerge, prCheckMinutes, prNextStep, type PrNextStep, type SwarmPr } from "./prs";
+import { defaultExecutor } from "./swarm";
 
 /**
  * Read models for the UI. Everything the pages show comes from here. Repos the user turned off
@@ -200,6 +201,7 @@ export async function getRecommendation(ctx: Ctx, id: string) {
     swarms: swarmRows,
     pr,
     autoMerge: await autoMerge(ctx),
+    executor: await defaultExecutor(ctx),
   };
 }
 

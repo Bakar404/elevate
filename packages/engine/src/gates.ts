@@ -47,12 +47,27 @@ export type EvidenceSignals = {
   hnStories: number;
   topRepoStars: number;
   evidenceLinks: number;
+  /** Days since the technique was first published. Absent: treated as old enough that missing discussion and code count fully. */
+  ageDays?: number;
 };
+
+/** Discussion and public code take weeks to appear. Until a technique is this old, their absence counts against it only in part. */
+export const YOUNG_DAYS = 30;
+
+/**
+ * Bumped whenever what the gates are shown or asked changes enough to change verdicts. Recent verdicts from an
+ * older calibration get one more review (see `reviewDue`).
+ */
+export const GATE_CALIBRATION = 2;
 
 /**
  * The evidence prior: what the world says, independent of the LLM. Its
  * quality is checked by the gate eval set, not proved; the kernel only
  * promises what is done with it (L1–L6).
+ *
+ * Something published this week can't have discussion or code yet, so for a young technique those two parts
+ * are judged by what the other signals say (never by more), fading out over YOUNG_DAYS. Every signal can
+ * still only raise the prior, and a weak source stays under the floor however new it is.
  */
 export function evidencePrior(e: EvidenceSignals) {
   const credibility = pct(e.maxCredibility);
@@ -60,9 +75,35 @@ export function evidencePrior(e: EvidenceSignals) {
   const community = pct((Math.log10(1 + Math.max(e.hnPoints, 0)) / 3) * 80 + Math.min(Math.max(e.hnStories, 0), 10) * 2);
   const code = pct((Math.log10(1 + Math.max(e.topRepoStars, 0)) / 4) * 100);
   const evidence = Math.min(Math.max(e.evidenceLinks, 0), 3) * 33.4;
-  const score = pct(credibility * 0.35 + corroboration * 0.2 + community * 0.2 + code * 0.15 + evidence * 0.1);
-  return { score, parts: { credibility, corroboration: Math.round(corroboration), community, code, evidence: pct(evidence) } };
+  const youth = e.ageDays === undefined ? 0 : Math.max(0, 1 - Math.max(e.ageDays, 0) / YOUNG_DAYS);
+  const stand = ((credibility * 0.35 + corroboration * 0.2 + evidence * 0.1) / 0.65) * youth;
+  const weigh = (community: number, code: number) =>
+    pct(credibility * 0.35 + corroboration * 0.2 + community * 0.2 + code * 0.15 + evidence * 0.1);
+  const score = weigh(Math.max(community, stand), Math.max(code, stand));
+  const newness = score - weigh(community, code);
+  return { score, parts: { credibility, corroboration: Math.round(corroboration), community, code, evidence: pct(evidence), ...(newness > 0 ? { newness } : {}) } };
 }
+
+/** The line that tells the reviewer how new a technique is, and what that means for the evidence it can have. */
+export function ageNote(ageDays: number) {
+  const d = Math.floor(Math.max(ageDays, 0));
+  const when = d < 1 ? "today" : d === 1 ? "1 day ago" : `${d} days ago`;
+  return ageDays < YOUNG_DAYS
+    ? `First published ${when}. Discussion and public code usually take weeks to appear, so their absence says little yet.`
+    : `First published ${when}.`;
+}
+
+const EXCERPTS = 4;
+/** Room for a whole arXiv abstract (up to ~1,900 characters), whose reported results come last. */
+const EXCERPT_CHARS = 2000;
+const plain = (s: string) =>
+  s
+    .replace(/<[^>]+>/g, " ")
+    .replace(/&nbsp;/g, " ")
+    .replace(/&amp;/g, "&")
+    .replace(/\s+/g, " ")
+    .trim();
+const clip = (s: string, n: number) => (s.length > n ? `${s.slice(0, n).replace(/\s+\S*$/, "")}…` : s);
 
 const RISK_ORDER: Risk[] = ["low", "medium", "high"];
 const higherRisk = (a: Risk, b: Risk): Risk => (RISK_ORDER.indexOf(a) >= RISK_ORDER.indexOf(b) ? a : b);
@@ -81,7 +122,16 @@ export async function legitimacyGate(ctx: Ctx, techniqueId: string): Promise<Gat
   if (!tech) throw new Error(`Technique ${techniqueId} not found`);
 
   const linked = await ctx.db
-    .select({ title: items.title, url: items.url, signals: items.signals, source: sources.name, credibility: sources.credibility })
+    .select({
+      title: items.title,
+      url: items.url,
+      content: items.content,
+      signals: items.signals,
+      publishedAt: items.publishedAt,
+      createdAt: items.createdAt,
+      source: sources.name,
+      credibility: sources.credibility,
+    })
     .from(items)
     .innerJoin(sources, eq(items.sourceId, sources.id))
     .where(eq(items.techniqueId, techniqueId));
@@ -95,6 +145,10 @@ export async function legitimacyGate(ctx: Ctx, techniqueId: string): Promise<Gat
   ]);
 
   const directPoints = linked.reduce((s, l) => s + (Number(l.signals?.points) || 0), 0);
+  const published = (l: (typeof linked)[number]) => l.publishedAt ?? l.createdAt;
+  // A feed date in the future is a feed bug; first seen here bounds it.
+  const firstPublished = Math.min(tech.firstSeenAt.getTime(), ...linked.map((l) => published(l).getTime()));
+  const ageDays = Math.max(0, (Date.now() - firstPublished) / 86_400_000);
   const prior = evidencePrior({
     maxCredibility: Math.max(0, ...linked.map((l) => l.credibility)),
     distinctSources: new Set(linked.map((l) => l.source)).size,
@@ -102,7 +156,15 @@ export async function legitimacyGate(ctx: Ctx, techniqueId: string): Promise<Gat
     hnStories: hn.stories,
     topRepoStars: Math.max(gh.top[0]?.stars ?? 0, ...linked.map((l) => Number(l.signals?.stars) || 0)),
     evidenceLinks: tech.claims.evidenceLinks.length,
+    ageDays,
   });
+  // What the sources actually say (an abstract, a release note), most credible first: a title alone can't show a method or results.
+  const excerpts = linked
+    .map((l) => ({ ...l, text: l.content ? plain(l.content) : "" }))
+    .filter((l) => l.text.length >= 40)
+    .sort((a, b) => b.credibility - a.credibility)
+    .slice(0, EXCERPTS)
+    .map((l) => `### ${l.title} (${l.source}, ${published(l).toISOString().slice(0, 10)})\n${clip(l.text, EXCERPT_CHARS)}`);
 
   const evidence: GateResult["evidence"] = [
     ...linked.map((l) => ({ label: `Reported by ${l.source} (credibility ${l.credibility})`, detail: l.title, url: l.url })),
@@ -121,6 +183,8 @@ export async function legitimacyGate(ctx: Ctx, techniqueId: string): Promise<Gat
       `Technique: ${tech.name} (${tech.category})`,
       `Summary: ${tech.summary}`,
       `Claimed benefits: ${tech.claims.claimedBenefits.join("; ") || "none stated"}`,
+      ageNote(ageDays),
+      ...(excerpts.length ? [`Source excerpts:`, ...excerpts] : [`Source excerpts: none (titles only)`]),
       `Evidence:`,
       ...evidence.map((e) => `- ${e.label}: ${e.detail}${e.url ? ` <${e.url}>` : ""}`),
       `Independent evidence prior: ${prior.score}/100 (${JSON.stringify(prior.parts)})`,
@@ -141,11 +205,16 @@ export async function legitimacyGate(ctx: Ctx, techniqueId: string): Promise<Gat
     verdict: d.passed ? review.verdict : `Not passed: ${why}. ${review.verdict}`,
     reasons: [...review.reasons, ...review.redFlags.map((r) => `Red flag: ${r}`)],
     evidence: [
-      { label: "Independent evidence prior", detail: `${prior.score}/100`, weight: 0.4 },
+      {
+        label: "Independent evidence prior",
+        detail: `${prior.score}/100${prior.parts.newness ? ` (new: +${prior.parts.newness} while discussion and code have had no time to appear)` : ""}`,
+        weight: 0.4,
+      },
       { label: "Reviewer score", detail: `${pct(review.score)}/100 (${review.legit ? "legit" : "not legit"})`, weight: 0.6 },
       ...evidence,
     ],
     checkedAt: new Date().toISOString(),
+    calibration: GATE_CALIBRATION,
   };
 
   await ctx.db.update(techniques).set({ legitimacy: result, legitimacyScore: d.score, updatedAt: new Date() }).where(eq(techniques.id, techniqueId));
@@ -221,6 +290,7 @@ export async function soundnessGate(ctx: Ctx, recommendationId: string): Promise
       ...files.map((f) => ({ label: "Inspected file", detail: f.path })),
     ],
     checkedAt: new Date().toISOString(),
+    calibration: GATE_CALIBRATION,
   };
 
   const score = recommendationScore(rec.relevance * 100, tech.legitimacyScore ?? 0, result.score);

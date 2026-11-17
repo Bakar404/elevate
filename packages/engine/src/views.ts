@@ -46,6 +46,35 @@ export async function stats(ctx: Ctx) {
   };
 }
 
+/**
+ * What the pipeline did in the last 24 hours, so the Inbox shows it is looking even when nothing new got through.
+ * `fetches` uses run_at (the jobs_ready index), which for a fetch is when it ran.
+ */
+export async function pipelinePulse(ctx: Ctx) {
+  const [row] = await ctx.db.execute<Record<string, unknown>>(sql`
+    select
+      (select count(*)::int from jobs where status = 'done' and run_at > now() - interval '1 day' and type = 'source.fetch') as fetches,
+      (select count(*)::int from items where created_at > now() - interval '1 day') as items,
+      (select count(*)::int from techniques where first_seen_at > now() - interval '1 day') as techniques,
+      (select count(*)::int from events where kind = 'gate.legitimacy' and created_at > now() - interval '1 day') as reviewed,
+      (select count(*)::int from events where kind = 'gate.legitimacy' and level = 'success' and created_at > now() - interval '1 day') as legit,
+      (select count(*)::int from events where kind = 'gate.soundness' and created_at > now() - interval '1 day') as checked,
+      (select count(*)::int from events where kind = 'gate.soundness' and level = 'success' and created_at > now() - interval '1 day') as recommended,
+      (select max(last_fetched_at) from sources where enabled) as "lastFetch"
+  `).then((r) => (Array.isArray(r) ? r : (r as { rows: Record<string, unknown>[] }).rows));
+  const n = (k: string) => Number(row?.[k] ?? 0);
+  return {
+    fetches: n("fetches"),
+    items: n("items"),
+    techniques: n("techniques"),
+    reviewed: n("reviewed"),
+    legit: n("legit"),
+    checked: n("checked"),
+    recommended: n("recommended"),
+    lastFetch: row?.lastFetch ? new Date(row.lastFetch as string | Date) : null,
+  };
+}
+
 const recColumns = {
   id: recommendations.id,
   title: recommendations.title,

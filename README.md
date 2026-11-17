@@ -116,6 +116,7 @@ pnpm dev                        # http://localhost:3100
 - **Pages reload over and over under `pnpm dev`?** Turbopack's dev cache is stale. Stop the server, delete `apps/web/.next/dev`, and start it again.
 - **Live map not moving?** Your system asks apps to reduce motion (Remote Desktop sessions often do), and elevate follows it. The map says so: click **Animate anyway**, or pick **On** in Settings → Motion. Either way it's remembered in that browser.
 - **An item says "retrying" or "failed"?** The model couldn't classify it. The usual cause is the model provider's content filter blocking the answer about that item; elevate splits the batch until only the item that tripped the filter fails, so the rest of its batch is still classified. Less often the model answers in prose instead of JSON. The row says why. The next sweeps try again, up to 3 times; after that it says "failed" until you press **Sweep now** on the Radar, which retries every failed item. Your sources are fine: a source that can't be fetched shows its error on the Radar's source list instead.
+- **Inbox empty?** The line under the stats on the home page shows what elevate did in the last 24 hours: fetches, new items and techniques, how many were reviewed and passed Gate 1, and how many changes were checked and recommended. If things are being reviewed but few pass, the Radar lists each technique's verdict and reasons. Every sweep also queues reviews that went missing, so nothing new stays unexamined.
 
 ## How it works
 
@@ -231,14 +232,14 @@ A proof can't cover the quality of the model's judgments, so the gate eval set m
 
 <picture>
   <source media="(prefers-color-scheme: light)" srcset="docs/images/evals-light.svg">
-  <img src="docs/images/evals-dark.svg" alt="Last live run: Gate 1 precision 1.00, recall 0.89, 0 of 7 hype cases passed, Gate 2 7 of 7 correct">
+  <img src="docs/images/evals-dark.svg" alt="Last live run: Gate 1 precision 1.00, recall 1.00, 0 of 10 hype cases passed, Gate 2 7 of 7 correct">
 </picture>
 
 Last live run, on the Copilot default model:
 
-- **Gate 1** had a precision of 1.00 and a recall of 0.89, and passed 0 of the 7 hype cases. Its only miss was a deliberately borderline "fresh preprint".
+- **Gate 1** had a precision of 1.00 and a recall of 1.00, and passed 0 of the 10 hype cases. Its passes included three preprints one to three days old, judged from their abstracts as the app shows them.
 - **Gate 2** judged 7 of 7 cases correctly. It is scored on the reference reviews, because `--live` replaces only the Gate 1 reviews.
-- 3 of 16 reviews contradicted themselves and were asked again. See `consistentReview` in [docs/architecture.md](docs/architecture.md).
+- 1 of 21 reviews contradicted itself and was asked again. See `consistentReview` in [docs/architecture.md](docs/architecture.md).
 
 ## Commands
 

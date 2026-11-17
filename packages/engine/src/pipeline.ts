@@ -1,6 +1,7 @@
 import { claimJob, completeJob, emit, failJob, getSetting, recoverStaleJobs, setSetting, enqueue, type ClaimedJob } from "@elevate/db";
 import { resolveGitHubToken } from "@elevate/github";
 import type { Ctx } from "./context";
+import { reviewDue } from "./access";
 import { classifyTechniques } from "./frontier";
 import { legitimacyGate, soundnessGate } from "./gates";
 import { fetchSourceItems, retryFailedTriage, seedSources, sweepSources, triageItems } from "./ingest";
@@ -27,7 +28,10 @@ export const HANDLERS: Record<string, Handler> = {
     if (p.scheduled === true) await retryFailedTriage(ctx, job.tenantId);
     // Sort any technique that triage didn't (ones recorded before it said whether they're cutting-edge). Free once all are sorted.
     await enqueue(ctx.db, "techniques.classify", {}, { dedupeKey: `techniques.classify:${job.tenantId}`, tenantId: job.tenantId });
-    return sweepSources(ctx, job.tenantId);
+    const fetching = await sweepSources(ctx, job.tenantId);
+    // Pick up reviews that are due: lost ones, and recent verdicts from an older gate calibration (a few per sweep).
+    await reviewDue(ctx, job.tenantId);
+    return fetching;
   },
   "source.fetch": (ctx, p) => fetchSourceItems(ctx, str(p, "sourceId")),
   "items.triage": (ctx, _p, job) => triageItems(ctx, job.tenantId, undefined, job.dedupeKey),

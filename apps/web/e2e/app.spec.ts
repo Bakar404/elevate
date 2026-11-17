@@ -298,6 +298,8 @@ test("repo search matches by stack and domain, keeps state in the URL, and filte
 test("home and radar show what is being searched for each repo, and the feed scrolls", async ({ page }) => {
   await waitForOpenRecs(page);
   await page.goto("/");
+  // The pulse shows the pipeline at work: the demo's reviews and its recommendations all happened just now.
+  await expect(page.getByTestId("pulse")).toContainText(/Last 24 hours: .*[1-9]\d* reviewed, [1-9]\d* legit .*[1-9]\d* recommended/);
   const plan = page.getByTestId("search-plan");
   await expect(plan).toBeVisible();
   for (const name of ["ledger-api", "llm-router", "edge-firmware"]) await expect(plan).toContainText(name);

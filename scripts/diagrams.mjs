@@ -147,10 +147,10 @@ function evals(t) {
   const b = [label(t, 32, 40, "GATE EVAL · LAST LIVE RUN ON THE COPILOT DEFAULT MODEL", "faint")];
   b.push(`<ellipse cx="600" cy="130" rx="520" ry="110" fill="url(#glow)"/>`);
   b.push(ring(t, 170, 125, 52, 1, "olive", "1.00", "Gate 1 precision"));
-  b.push(ring(t, 430, 125, 52, 0.89, "sky", "0.89", "Gate 1 recall"));
-  b.push(ring(t, 690, 125, 52, 0, "danger", "0 / 7", "hype cases passed"));
+  b.push(ring(t, 430, 125, 52, 1, "sky", "1.00", "Gate 1 recall"));
+  b.push(ring(t, 690, 125, 52, 0, "danger", "0 / 10", "hype cases passed"));
   b.push(ring(t, 950, 125, 52, 1, "sand", "7 / 7", "Gate 2 correct"));
-  return frame(t, W, H, b.join("\n"), "Gate eval: precision 1.00, recall 0.89, 0 of 7 hype cases passed, Gate 2 7 of 7");
+  return frame(t, W, H, b.join("\n"), "Gate eval: precision 1.00, recall 1.00, 0 of 10 hype cases passed, Gate 2 7 of 7");
 }
 
 function proof(t) {

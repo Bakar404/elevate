@@ -1,5 +1,5 @@
-import { accessProfile, activityGraph, cuttingEdgeOnly, discoveryFeed, listRecommendations, radar, searchPlan, stats } from "@elevate/engine";
-import { ArrowRight, Inbox, Radar as RadarIcon, ShieldCheck, Sparkles } from "lucide-react";
+import { accessProfile, activityGraph, cuttingEdgeOnly, discoveryFeed, listRecommendations, pipelinePulse, radar, searchPlan, stats } from "@elevate/engine";
+import { Activity, ArrowRight, Inbox, Radar as RadarIcon, ShieldCheck, Sparkles } from "lucide-react";
 import { cookies } from "next/headers";
 import Link from "next/link";
 import { AccessStrip } from "@/components/access-strip";
@@ -13,7 +13,7 @@ import { Card, Empty, ScoreRing, ShimmerText, Stat } from "@/components/ui";
 import { scoreTone } from "@/lib/tone";
 import { DEFAULT_LOGO, isLogoVariant, LOGO_COOKIE } from "@/lib/prefs";
 import { getCtx } from "@/lib/server";
-import { cn } from "@/lib/utils";
+import { cn, ago } from "@/lib/utils";
 
 export const dynamic = "force-dynamic";
 
@@ -29,7 +29,7 @@ export default async function InboxPage({ searchParams }: { searchParams: Promis
   const { tab: raw } = await searchParams;
   const tab: TabKey = raw && raw in TABS ? (raw as TabKey) : "open";
   const ctx = await getCtx();
-  const [s, all, graph, jar, plan, focused, recent, techs, access, onlyCuttingEdge] = await Promise.all([
+  const [s, all, graph, jar, plan, focused, recent, techs, access, onlyCuttingEdge, pulse] = await Promise.all([
     stats(ctx),
     listRecommendations(ctx),
     activityGraph(ctx),
@@ -40,6 +40,7 @@ export default async function InboxPage({ searchParams }: { searchParams: Promis
     radar(ctx),
     accessProfile(ctx),
     cuttingEdgeOnly(ctx),
+    pipelinePulse(ctx),
   ]);
   // An open recommendation that's held back isn't waiting on the user: they can't act on it (its model was replaced, or
   // the product isn't connected), they disliked it, it's routine upkeep, or it's the kind of idea they pass on.
@@ -101,7 +102,8 @@ export default async function InboxPage({ searchParams }: { searchParams: Promis
               hint={readyToMerge ? `${readyToMerge} ready to merge` : `${s.merged} merged · ${s.activeSwarms} swarm${s.activeSwarms === 1 ? "" : "s"} running`}
             />
           </div>
-          <SearchPlan plan={plan} className="mt-4" />
+          <Pulse p={pulse} className="mt-3" />
+          <SearchPlan plan={plan} className="mt-2" />
           <AccessStrip ecosystems={access.ecosystems} setAside={setAside} className="mt-1" />
         </div>
       </section>
@@ -193,6 +195,22 @@ export default async function InboxPage({ searchParams }: { searchParams: Promis
         </Reveal>
       </div>
     </div>
+  );
+}
+
+/** Proof the pipeline is looking, even on a day nothing new gets through both gates. */
+function Pulse({ p, className }: { p: Awaited<ReturnType<typeof pipelinePulse>>; className?: string }) {
+  const n = (v: number) => v.toLocaleString("en-US");
+  const count = (v: number, one: string, many = `${one}s`) => `${n(v)} ${v === 1 ? one : many}`;
+  return (
+    <p data-testid="pulse" className={cn("flex items-start gap-1.5 text-xs text-faint", className)}>
+      <Activity className="mt-px size-3.5 shrink-0" aria-hidden />
+      <span>
+        Last 24 hours: {count(p.fetches, "fetch", "fetches")} · {count(p.items, "new item")} · {count(p.techniques, "new technique")} · {n(p.reviewed)}{" "}
+        reviewed, {n(p.legit)} legit · {count(p.checked, "change")} checked, {n(p.recommended)} recommended
+        {p.lastFetch && ` · last fetch ${ago(p.lastFetch)}`}
+      </span>
+    </p>
   );
 }
 

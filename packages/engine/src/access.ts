@@ -1,4 +1,4 @@
-import { desc, enqueue, eq, getSetting, gte, items, sources, recommendations, setSetting, techniques } from "@elevate/db";
+import { and, desc, enqueue, eq, getSetting, gte, inArray, isNotNull, isNull, items, jobs, or, repos, sources, recommendations, setSetting, sql, techniques, type GateResult } from "@elevate/db";
 import {
   ECOSYSTEMS,
   ECOSYSTEM_LABEL,
@@ -15,6 +15,8 @@ import type { ModelOption } from "@elevate/agent";
 import type { Ctx } from "./context";
 import { resolveModelConfig } from "./context";
 import { cuttingEdgeOnly, isCuttingEdge } from "./frontier";
+import { GATE_CALIBRATION } from "./gates";
+import { applyEvent, LifecycleError } from "./lifecycle";
 import { availableModels } from "./models";
 
 export type AccessOverrides = Partial<Record<Ecosystem, boolean>>;
@@ -167,5 +169,108 @@ export async function recheckAccess(ctx: Ctx, tenantId = "local") {
   return queued;
 }
 
+/** Reviews queued per sweep: a backlog clears within a few sweeps, without a burst of model calls. */
+export const REVIEW_BATCH = 30;
+/** How far back a verdict from an older gate calibration still gets its one more look. */
+export const REVIEW_DAYS = 14;
+
+/**
+ * Run with every sweep, so nothing new goes unexamined. Up to `limit`, in order:
+ * 1. candidates stuck before Gate 2 (their check was never queued, so "Verifying…" would never end);
+ * 2. techniques that never got a Gate 1 review (one queued at the end of a triage run that didn't finish is lost);
+ * 3. recent techniques Gate 1 judged under an older calibration, newest first;
+ * 4. recent recommendations Gate 2 filtered out under an older calibration, once their technique has passed under
+ *    the current one (or is too old to be looked at again), so the re-check sees its current legitimacy.
+ * Only what the user can act on (and only cutting-edge ideas while that's on), each at most once per calibration,
+ * and never one whose review job gave up since it was last judged. Returns how many it queued.
+ */
+export async function reviewDue(ctx: Ctx, tenantId = "local", limit = REVIEW_BATCH) {
+  const access = await accessProfile(ctx);
+  const onlyCuttingEdge = await cuttingEdgeOnly(ctx);
+  const since = new Date(Date.now() - REVIEW_DAYS * 86_400_000);
+  const wanted = (t: Taggable & { frontier: boolean | null }) => verdictFor(t, access).usable && (!onlyCuttingEdge || isCuttingEdge(t));
+  const current = (verdict: GateResult | null) => (verdict?.calibration ?? 0) >= GATE_CALIBRATION;
+  const stale = (verdict: typeof techniques.legitimacy | typeof recommendations.gate2) =>
+    sql`coalesce((${verdict}->>'calibration')::int, 0) < ${GATE_CALIBRATION}`;
+
+  // When each review job last gave up for good: queueing one that keeps failing again would loop every sweep.
+  const gaveUp = new Map<string, Date>();
+  for (const j of await ctx.db
+    .select({ type: jobs.type, payload: jobs.payload, finishedAt: jobs.finishedAt })
+    .from(jobs)
+    .where(and(eq(jobs.tenantId, tenantId), eq(jobs.status, "failed"), inArray(jobs.type, ["technique.legitimacy", "recommendation.soundness"])))) {
+    const key = `${j.type}:${String(j.payload.techniqueId ?? j.payload.recommendationId)}`;
+    const prev = gaveUp.get(key);
+    if (j.finishedAt && (!prev || j.finishedAt > prev)) gaveUp.set(key, j.finishedAt);
+  }
+  const gaveUpSince = (key: string, judged: Date | null) => {
+    const at = gaveUp.get(key);
+    return !!at && (!judged || at > judged);
+  };
+  const judgedAt = (verdict: GateResult | null) => (verdict ? new Date(verdict.checkedAt) : null);
+
+  let queued = 0;
+  const review = async (id: string) => {
+    if (await enqueue(ctx.db, "technique.legitimacy", { techniqueId: id }, { dedupeKey: `technique.legitimacy:${id}`, tenantId })) queued++;
+  };
+  const check = async (id: string) => {
+    if (await enqueue(ctx.db, "recommendation.soundness", { recommendationId: id }, { dedupeKey: `recommendation.soundness:${id}`, tenantId })) queued++;
+  };
+  const techColumns = { name: techniques.name, summary: techniques.summary, claims: techniques.claims, frontier: techniques.frontier, legitimacy: techniques.legitimacy };
+  const recsIn = (status: "candidate" | "gated_out") =>
+    ctx.db
+      .select({ id: recommendations.id, gate2: recommendations.gate2, updatedAt: recommendations.updatedAt, tech: { ...techColumns, firstSeenAt: techniques.firstSeenAt } })
+      .from(recommendations)
+      .innerJoin(repos, eq(recommendations.repoId, repos.id))
+      .innerJoin(techniques, eq(recommendations.techniqueId, techniques.id))
+      .where(
+        and(
+          eq(recommendations.tenantId, tenantId),
+          eq(recommendations.status, status),
+          eq(repos.watch, true),
+          ...(status === "gated_out" ? [gte(recommendations.createdAt, since), stale(recommendations.gate2)] : []),
+        ),
+      )
+      .orderBy(desc(recommendations.createdAt));
+
+  for (const r of await recsIn("candidate")) {
+    if (queued >= limit) return queued;
+    if (wanted(r.tech) && !gaveUpSince(`recommendation.soundness:${r.id}`, r.updatedAt)) await check(r.id);
+  }
+
+  // Ones classify hasn't sorted yet wait for it: the sweep queues it right before this.
+  const techs = (
+    await ctx.db
+      .select({ id: techniques.id, ...techColumns })
+      .from(techniques)
+      .where(
+        and(
+          eq(techniques.tenantId, tenantId),
+          isNotNull(techniques.frontier),
+          or(isNull(techniques.legitimacy), and(gte(techniques.firstSeenAt, since), stale(techniques.legitimacy))),
+        ),
+      )
+      .orderBy(desc(techniques.firstSeenAt))
+  ).filter((t) => wanted(t) && !gaveUpSince(`technique.legitimacy:${t.id}`, judgedAt(t.legitimacy)));
+  for (const t of [...techs.filter((t) => !t.legitimacy), ...techs.filter((t) => t.legitimacy)]) {
+    if (queued >= limit) return queued;
+    await review(t.id);
+  }
+
+  for (const r of await recsIn("gated_out")) {
+    if (queued >= limit) return queued;
+    const settled = current(r.tech.legitimacy) || r.tech.firstSeenAt < since;
+    if (!r.tech.legitimacy?.passed || !settled || !wanted(r.tech) || gaveUpSince(`recommendation.soundness:${r.id}`, judgedAt(r.gate2))) continue;
+    try {
+      // What "Check again" does: back to candidate, then through Gate 2.
+      await applyEvent(ctx.db, r.id, "regate");
+    } catch (err) {
+      if (err instanceof LifecycleError) continue;
+      throw err;
+    }
+    await check(r.id);
+  }
+  return queued;
+}
 
 export { ECOSYSTEMS, ECOSYSTEM_LABEL, type Ecosystem } from "@elevate/sources";

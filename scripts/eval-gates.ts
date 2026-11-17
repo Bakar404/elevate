@@ -8,11 +8,21 @@
  */
 import { readFileSync } from "node:fs";
 import { CopilotLLM, modelConfigFromEnv } from "../packages/agent/src/index.ts";
-import { consistentReview, evidencePrior, type EvidenceSignals } from "../packages/engine/src/gates.ts";
+import { ageNote, consistentReview, evidencePrior, type EvidenceSignals } from "../packages/engine/src/gates.ts";
 import { LEGITIMACY_SYSTEM, LegitimacySchema } from "../packages/engine/src/prompts.ts";
 import { DEFAULT_THRESHOLDS, legitimacyDecision, soundnessDecision, type Risk, type Thresholds } from "../packages/policy/src/index.ts";
 
-type LegitCase = { id: string; label: "legit" | "hype"; name: string; summary: string; links: string[]; signals: EvidenceSignals; review: { legit: boolean; score: number } };
+type LegitCase = {
+  id: string;
+  label: "legit" | "hype";
+  name: string;
+  summary: string;
+  /** What the sources say, shown to the reviewer as production shows it. */
+  excerpt?: string;
+  links: string[];
+  signals: EvidenceSignals;
+  review: { legit: boolean; score: number };
+};
 type SoundCase = { id: string; label: "sound" | "unsound"; repo: string; technique: string; review: { sound: boolean; measurable: boolean; score: number; risk: Risk } };
 
 const fixture = JSON.parse(readFileSync(new URL("../fixtures/gate-eval.json", import.meta.url), "utf8")) as { legitimacy: LegitCase[]; soundness: SoundCase[] };
@@ -25,12 +35,17 @@ async function reviewOf(c: LegitCase, prior: ReturnType<typeof evidencePrior>) {
     task: "legitimacy",
     system: LEGITIMACY_SYSTEM,
     schema: LegitimacySchema,
+    // Laid out like the production prompt (legitimacyGate), from the case's snapshot of the same signals.
     prompt: [
       `Technique: ${c.name}`,
       `Summary: ${c.summary}`,
+      ...(c.signals.ageDays === undefined ? [] : [ageNote(c.signals.ageDays)]),
+      ...(c.excerpt ? [`Source excerpts:`, `### ${c.name}\n${c.excerpt}`] : [`Source excerpts: none (titles only)`]),
       `Evidence:`,
+      `- Reported by ${c.signals.distinctSources} source(s), top credibility ${c.signals.maxCredibility}`,
+      `- Hacker News discussion: ${c.signals.hnStories} stories, ${c.signals.hnPoints} points`,
+      `- Public code: top matching repo ★${c.signals.topRepoStars}`,
       ...c.links.map((u) => `- Cited evidence: ${u}`),
-      `- Signals: ${JSON.stringify(c.signals)}`,
       `Independent evidence prior: ${prior.score}/100 (${JSON.stringify(prior.parts)})`,
     ].join("\n"),
   }, (r) => r.legit);

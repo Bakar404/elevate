@@ -35,16 +35,28 @@ Every table has a `tenant_id`, which is `local` for now.
 |---|---|---|
 | `repos.sync` | List your repos (every 2 minutes; `ELEVATE_SYNC_MINUTES`). For repos whose `pushed_at` moved, read the default-branch head SHA | `repo.profile` for watched repos whose head differs from the profiled commit |
 | `repo.profile` | Read the README, manifests and tree at the head commit; model writes the profile; embed it; store `profiled_sha` | `repo.match` |
-| `sources.sweep` | Every 15 minutes (`ELEVATE_SWEEP_MINUTES`), add any built-in source the workspace lacks (matched by URL without the HN time window, so each is added once) and fan out to each enabled source | `source.fetch` |
+| `sources.sweep` | Every 15 minutes (`ELEVATE_SWEEP_MINUTES`), add any built-in source the workspace lacks (matched by URL without the HN time window, so each is added once) and fan out to each enabled source. Then `reviewDue` queues the reviews nothing else would (see below) | `source.fetch`, and `technique.legitimacy` / `recommendation.soundness` for what is due |
 | `sources.sweep` (cont.) | Feeds about a product the user doesn't have are skipped | |
 | `source.fetch` | Fetch and dedupe items; drop ones published more than `ELEVATE_MAX_ITEM_AGE_DAYS` ago | `items.triage` |
 | `items.triage` | Model keeps engineering-relevant items and extracts techniques, tagging each with the AI products it requires, the model versions it is about, and whether it is cutting-edge; near-duplicates (cosine ≥ 0.82) merge. A batch the content filter blocks is halved until only the items that trip it fail; a batch the model can't answer otherwise (prose instead of JSON, after one re-ask) fails whole. Failed items are marked `error` with the reason; each scheduled sweep retries them, up to `TRIAGE_TRIES` (3) failures, and **Sweep now** retries all of them | `technique.legitimacy`, unless the user can't act on it or it is routine upkeep |
 | `techniques.classify` | Queued by every sweep: asks the model whether techniques recorded before triage said so are cutting-edge, 20 at a time. Does nothing once every technique has an answer | |
-| `technique.legitimacy` | **Gate 1**: evidence prior (credibility, corroboration, HN signal, public code, cited links) plus a skeptical review, decided by `legitimacyDecision` | `technique.match` if passed |
-| `technique.match` / `repo.match` | Top-K repos by embedding, then the model judges fit and writes a concrete change hypothesis | `recommendation.soundness` |
-| `recommendation.soundness` | **Gate 2**: reads the touchpoint files, gets a review of fit, risk, impact and measurement, decided by `soundnessDecision` | `open` (inbox) or `gated_out` |
+| `technique.legitimacy` | **Gate 1**: evidence prior (credibility, corroboration, HN signal, public code, cited links) plus a skeptical review, decided by `legitimacyDecision`. The reviewer reads up to four source excerpts, each long enough for a whole abstract (where results are reported, last), and is told how old the technique is. It judges what the sources say and leaves corroboration, discussion and public code to the prior, so their absence isn't counted twice. Until it is `YOUNG_DAYS` (30) old, missing discussion and code count against it only in part: those two parts of the prior are judged by credibility, corroboration and cited links instead, never above them, and the lift fades with age. The verdict records the `GATE_CALIBRATION` it was made under | `technique.match` if passed |
+| `technique.match` / `repo.match` | Top-K repos by embedding, then the model judges fit and writes a concrete change hypothesis. Something the repo already does isn't a match. A new technique can be proposed as a small trial (behind a flag, in one module, or as an eval), and the matcher says how it would be measured: a check that runs on the repo before and after (its tests, evals or benchmarks, or a replay of data it already records), not a live A/B over real usage | `recommendation.soundness` |
+| `recommendation.soundness` | **Gate 2**: reads the touchpoint files, gets a review of fit, risk, impact and measurement, decided by `soundnessDecision`. A small, reversible trial with a concrete before/after check is judged on how well the experiment is designed and what it costs, not on certainty about its result. The reviewer's score bands line up with the kernel's bars (65–79 is a sound trial worth running), and it reports risk on its own rather than in the score, because the bar already rises with risk (+5 medium, +15 high) | `open` (inbox) or `gated_out` |
 | `swarm.run` | Plan the DAG, run it on the chosen executor through the guard, open a draft PR | `pr_opened` and `prs.track`, or `failed` |
 | `prs.track` | Every 2 minutes (`ELEVATE_PR_MINUTES`), and right after a swarm opens its PR: read each swarm PR's state, checks and mergeability, store it on the swarm, and follow merges, closes and reopens made on GitHub. With auto-merge on, merge the PRs that are verified | `merged` or `closed` |
+
+### Catching up on reviews
+
+`reviewDue` (`packages/engine/src/access.ts`) runs at the end of every sweep and queues at most `REVIEW_BATCH` (30) reviews, in this order:
+
+1. Recommendations left as candidates, for example by a crash between the matcher and Gate 2.
+2. Techniques that never got a Gate 1 review (triage crashed before queueing it), then techniques first seen in the last 14 days whose verdict predates the current `GATE_CALIBRATION`, newest first.
+3. Recommendations from the last 14 days that Gate 2 turned down under an older calibration, once their technique has passed Gate 1 under the current one (or is too old to be reviewed again). They go back to `candidate` through the lifecycle's `regate` event, so the proved lifecycle still decides.
+
+Only watched repos count, and only techniques the user can act on (and cutting-edge ones, while that filter is on). A review whose job failed after the last verdict isn't queued again, so something the model can't review doesn't cost a call every sweep. Bumping `GATE_CALIBRATION` is how a change to what the gates are shown or asked reaches recent verdicts; the kernel and its thresholds don't change.
+
+The home page shows what the pipeline did in the last 24 hours, on the line under its stats (`pipelinePulse` in `packages/engine/src/views.ts`): fetches, new items and techniques, Gate 1 reviews and passes, Gate 2 checks and recommendations, and when a source was last fetched.
 
 ### Access: what the user can act on
 

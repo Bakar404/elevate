@@ -1,9 +1,9 @@
 import { HashingEmbedder, type LLM } from "@elevate/agent";
-import { createDb, eq, items, repos, sources, techniques } from "@elevate/db";
+import { and, createDb, eq, items, recommendations, repos, sources, techniques } from "@elevate/db";
 import { FakeGitHub } from "@elevate/executors";
 import { buildFocusQueries, fetchFocused, focusUrl, normalizeTerm, parseFocusResponse, type FocusRepo, type Fetcher } from "@elevate/sources";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { demoLLM, drain, fetchSourceItems, focusQueries, matchTechnique, seedDemo, type Ctx } from "../src";
+import { demoLLM, drain, fetchSourceItems, focusQueries, seedDemo, type Ctx } from "../src";
 
 const repo = (id: string, profile: FocusRepo["profile"], extra: Partial<FocusRepo> = {}): FocusRepo => ({ id, fullName: `me/${id}`, profile, ...extra });
 
@@ -115,7 +115,7 @@ describe("focused sweep on the demo workspace", () => {
     for (const r of all) expect(qs.some((q) => q.repoIds.includes(r.id))).toBe(true);
   });
 
-  it("tags finds with the repo it searched for, re-triages items dismissed without that context, and matches that repo first", async () => {
+  it("tags finds with the repo it searched for, re-triages items dismissed without that context, and, as a day-old find clears Gate 1, matches that repo first", async () => {
     const [ledger] = await ctx.db.select().from(repos).where(eq(repos.fullName, "demo/ledger-api"));
     const [hnSrc] = await ctx.db.select().from(sources).where(eq(sources.url, "demo://hn"));
     await ctx.db.insert(items).values({ tenantId: "local", sourceId: hnSrc!.id, url: STORY.url, title: STORY.title, status: "irrelevant" });
@@ -132,16 +132,15 @@ describe("focused sweep on the demo workspace", () => {
     const triage = prompts.filter((p) => p.task === "triage").at(-1)!;
     expect(triage.prompt).toMatch(/Found searching "[^"]+" for: demo\/ledger-api/);
     const [triaged] = await ctx.db.select().from(items).where(eq(items.url, STORY.url));
-    expect(triaged!.techniqueId).toBeTruthy();
+    const [tech] = await ctx.db.select().from(techniques).where(eq(techniques.id, triaged!.techniqueId!));
+    expect(tech!.legitimacy?.passed).toBe(true);
 
-    await ctx.db
-      .update(techniques)
-      .set({ legitimacy: { passed: true, score: 80, verdict: "ok", evidence: [], reasons: [] } as never })
-      .where(eq(techniques.id, triaged!.techniqueId!));
-    prompts.length = 0;
-    await matchTechnique(ctx, triaged!.techniqueId!);
-    const match = prompts.find((p) => p.task === "match")!;
-    const first = match.prompt.split("\n### ")[1]!;
-    expect(first).toMatch(/^demo\/ledger-api\n\(This technique surfaced in a search for/);
+    const match = prompts.find((p) => p.task === "match" && p.prompt.startsWith(`Technique: ${tech!.name} (`))!;
+    expect(match.prompt.split("\n### ")[1]).toMatch(/^demo\/ledger-api\n\(This technique surfaced in a search for/);
+    const proposed = await ctx.db
+      .select({ id: recommendations.id })
+      .from(recommendations)
+      .where(and(eq(recommendations.techniqueId, tech!.id), eq(recommendations.repoId, ledger!.id)));
+    expect(proposed).toHaveLength(1);
   });
 });

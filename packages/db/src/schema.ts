@@ -183,6 +183,8 @@ export type GateResult = {
   reasons: string[];
   evidence: { label: string; detail: string; url?: string; weight?: number }[];
   checkedAt: string;
+  /** Version of the gate's inputs (prompt, evidence) that produced this verdict. Absent = before versioning. */
+  calibration?: number;
 };
 
 /** A technique is a de-duplicated "new thing" that one or more items describe. */

@@ -1,5 +1,5 @@
 import { HashingEmbedder } from "@elevate/agent";
-import { createDb, items, sources } from "@elevate/db";
+import { and, createDb, eq, items, jobs, recommendations, sources, techniques, type GateResult } from "@elevate/db";
 import { FakeGitHub } from "@elevate/executors";
 import { detectEcosystems, findModels, inferTags, judgeAccess, parseFeed, sourceEcosystem, defaultSources, type Access } from "@elevate/sources";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
@@ -11,11 +11,13 @@ import {
   discoveryFeed,
   drain,
   fetchSourceItems,
+  GATE_CALIBRATION,
   listRecommendations,
   listSources,
   radar,
   recheckAccess,
   removeSource,
+  reviewDue,
   seedDemo,
   seedSources,
   setAccessOverrides,
@@ -198,5 +200,90 @@ describe("in the pipeline", () => {
     expect(merged[0]).toMatchObject({ enabled: false, items: first!.items + 1, builtIn: true });
     // A fetch queued for the copy before it was merged has nothing left to do.
     expect(await fetchSourceItems(live, copy!.id)).toBe(0);
+  });
+});
+
+describe("reviewDue: nothing new goes unexamined", () => {
+  const handle = createDb({ memory: true });
+  let ctx: Ctx;
+  beforeAll(async () => {
+    await handle.ready;
+    ctx = {
+      db: handle.db,
+      demo: true,
+      llm: demoLLM(),
+      embedder: new HashingEmbedder(),
+      github: () => Promise.reject(new Error("offline")),
+      writer: async () => new FakeGitHub(),
+      token: async () => "t",
+      fetcher: async () => {
+        throw new Error("offline");
+      },
+    };
+    await seedDemo(ctx);
+    await drain(ctx);
+  }, 120_000);
+  afterAll(() => handle.close());
+
+  const techById = async (id: string) => (await ctx.db.select().from(techniques).where(eq(techniques.id, id)))[0]!;
+  const recById = async (id: string) => (await ctx.db.select().from(recommendations).where(eq(recommendations.id, id)))[0]!;
+  const reviewable = async () => (await radar(ctx)).filter((t) => t.access.usable && t.cuttingEdge && t.legitimacy);
+  const openRecs = () => ctx.db.select().from(recommendations).where(eq(recommendations.status, "open"));
+  // The same verdict as made before calibration was recorded.
+  const older = ({ calibration: _, ...verdict }: GateResult): GateResult => verdict;
+  const queuedReviews = async () =>
+    (await ctx.db.select({ payload: jobs.payload }).from(jobs).where(and(eq(jobs.type, "technique.legitimacy"), eq(jobs.status, "queued")))).map((j) => j.payload);
+
+  it("finds nothing due once everything was judged under the current calibration, and leaves held techniques alone", async () => {
+    expect(await reviewDue(ctx)).toBe(0);
+    expect((await radar(ctx)).find((t) => /Codex/.test(t.name))).toMatchObject({ legitimacy: null, access: { usable: false } });
+  });
+
+  it("queues a lost review before an older verdict, within the limit, and each once", async () => {
+    const [lost, old] = await reviewable();
+    await ctx.db.update(techniques).set({ legitimacy: null }).where(eq(techniques.id, lost!.id));
+    await ctx.db.update(techniques).set({ legitimacy: older(old!.legitimacy!) }).where(eq(techniques.id, old!.id));
+
+    expect(await reviewDue(ctx, "local", 1)).toBe(1);
+    expect(await queuedReviews()).toEqual([{ techniqueId: lost!.id }]);
+    expect(await reviewDue(ctx)).toBe(1);
+    await drain(ctx);
+    for (const t of [lost!, old!]) expect((await techById(t.id)).legitimacy?.calibration).toBe(GATE_CALIBRATION);
+    expect(await reviewDue(ctx)).toBe(0);
+  });
+
+  it("checks a candidate whose Gate 2 check was never queued", async () => {
+    const [rec] = await openRecs();
+    await ctx.db.update(recommendations).set({ status: "candidate", history: [] }).where(eq(recommendations.id, rec!.id));
+    expect(await reviewDue(ctx)).toBe(1);
+    await drain(ctx);
+    expect((await recById(rec!.id)).status).toBe("open");
+  });
+
+  it("re-checks a recommendation Gate 2 filtered out under an older calibration, after its technique's own re-review", async () => {
+    const [rec] = await openRecs();
+    const tech = await techById(rec!.techniqueId);
+    await ctx.db.update(techniques).set({ legitimacy: older(tech.legitimacy!) }).where(eq(techniques.id, tech.id));
+    await ctx.db
+      .update(recommendations)
+      .set({ status: "gated_out", history: ["gate_fail"], gate2: older({ ...rec!.gate2!, passed: false }) })
+      .where(eq(recommendations.id, rec!.id));
+
+    expect(await reviewDue(ctx)).toBe(1);
+    expect(await queuedReviews()).toEqual([{ techniqueId: tech.id }]);
+    expect((await recById(rec!.id)).status).toBe("gated_out");
+    await drain(ctx);
+    expect(await reviewDue(ctx)).toBe(1);
+    expect((await recById(rec!.id)).status).toBe("candidate");
+    await drain(ctx);
+    expect(await recById(rec!.id)).toMatchObject({ status: "open", gate2: { passed: true, calibration: GATE_CALIBRATION } });
+    expect(await reviewDue(ctx)).toBe(0);
+  });
+
+  it("doesn't queue a review again once it gave up after the verdict", async () => {
+    const [t] = await reviewable();
+    await ctx.db.update(techniques).set({ legitimacy: older(t!.legitimacy!) }).where(eq(techniques.id, t!.id));
+    await ctx.db.insert(jobs).values({ type: "technique.legitimacy", payload: { techniqueId: t!.id }, status: "failed", attempts: 3, finishedAt: new Date() });
+    expect(await reviewDue(ctx)).toBe(0);
   });
 });

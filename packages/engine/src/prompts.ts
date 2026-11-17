@@ -95,7 +95,7 @@ export const MatchSchema = z.object({
       title: z.string().describe("Imperative recommendation title, <= 80 chars, e.g. 'Add property-based tests to the parser'"),
       change: z.string().describe("The concrete change to make in this repo"),
       rationale: z.string().describe("Why this repo specifically benefits"),
-      expectedImpact: z.string().describe("Expected, measurable outcome"),
+      expectedImpact: z.string().describe("Expected outcome, and the before/after check on this repo that would show it"),
       effort: z.enum(["S", "M", "L"]),
       risk: z.enum(["low", "medium", "high"]),
       touchpoints: z.array(z.string()).describe("Files/dirs likely to change (must exist in the profile/tree)"),
@@ -105,26 +105,37 @@ export const MatchSchema = z.object({
 
 export const MATCH_SYSTEM = `You decide whether a newly published technique should be applied to specific existing repositories.
 Be selective: most techniques do NOT apply to most repos. Only mark applies=true when there is a specific, plausible change
-with a clear benefit for that repo's stack and domain. Generic advice ("add tests", "use AI") is never a match.
+with a clear benefit for that repo's stack and domain. Generic advice ("add tests", "use AI") is never a match, and neither is
+something the profile shows the repo already does.
+The technique is new, so the change can be a small trial rather than full adoption: behind a flag, in one module, or as an eval
+that compares against what the repo does today. Keep the change to what the trial needs.
+In expectedImpact, say what would be measured and how: a check that runs on this repo before and after the change (its tests,
+evals or benchmarks, or a replay of data it already records) and is sensitive enough to show the effect. A live A/B over real
+usage is not a check: it takes too many runs to show anything.
 The prompt lists the AI products and models the user has. Never propose a change that depends on a product or model outside that list,
 and never propose adopting a model version older than one they already have.`;
 
 export const LegitimacySchema = z.object({
-  legit: z.boolean().describe("Is this a real, substantiated technique (not hype, vaporware, or a misread claim)?"),
+  legit: z.boolean().describe("Is this a real, specific technique backed by evidence (not hype, vaporware, or a misread claim)?"),
   score: z.number().min(0).max(100).describe("Confidence that the technique is legitimate, 0-100 (consistent with `legit`)"),
   verdict: z.string().describe("One sentence"),
   reasons: z.array(z.string()),
-  redFlags: z.array(z.string()).describe("Hype signals, missing evidence, unreplicated claims, conflicts of interest"),
+  redFlags: z.array(z.string()).describe("Hype signals, claims the sources don't support, missing method or results, conflicts of interest"),
 });
 
-export const LEGITIMACY_SYSTEM = `You are a skeptical research reviewer. Decide whether a newly announced technique is legitimate:
-backed by credible sources, reproducible evidence (code, benchmarks, peer review), and independent corroboration.
-Penalize marketing language, single-source claims, missing code/benchmarks, and extraordinary claims without evidence.
-Reward: reputable labs/venues, open code, independent replication, sustained community discussion.
-Use only the evidence provided; do not assume facts not in evidence.`;
+export const LEGITIMACY_SYSTEM = `You are a careful research reviewer. Techniques reach you soon after they are published, often as a single
+preprint, lab post or release note. Decide whether this one is legitimate: a real, specific method whose sources say how it works
+and back it with evidence, such as reported results or benchmarks, released code, or a credible lab, venue or vendor.
+Judge what the sources say, not how much attention they have had yet. The independent evidence prior already weighs corroboration,
+discussion and public code, and new work hasn't had time to gather them, so don't lower your score because they are missing.
+Set legit=false for hype: marketing without technical content, vaporware ("coming soon"), claims the sources don't support,
+extraordinary claims without evidence, or a misreading of what the source says.
+Score: 85+ established and replicated; 70-84 a specific method with reported results from a credible source, even if new;
+50-69 plausible but thin (vague method, no results, weak source); below 50 not legitimate.
+Use only the evidence provided, including the source excerpts; do not assume facts not in evidence.`;
 
 export const SoundnessSchema = z.object({
-  sound: z.boolean().describe("Will this change make a real, positive difference in THIS repo, worth its cost?"),
+  sound: z.boolean().describe("Is this change (or trial) technically sound for THIS repo, with a real chance of a positive difference worth its cost?"),
   score: z.number().min(0).max(100).describe("Confidence the change is sound and worth it for THIS repo, 0-100 (consistent with `sound`)"),
   verdict: z.string(),
   reasons: z.array(z.string()),
@@ -140,8 +151,16 @@ export const SoundnessSchema = z.object({
 
 export const SOUNDNESS_SYSTEM = `You are a pragmatic staff engineer reviewing a proposed change to a codebase.
 Judge whether the change is technically sound for THIS code (stack, architecture, constraints visible in the files)
-and whether it will make a measurable difference. Reject changes that are cosmetic, speculative, conflict with the
-existing design, or whose benefit cannot be measured. Prefer small, verifiable wins over sweeping rewrites.`;
+and whether its effect can be measured. The technique is new, so nobody can be sure of the outcome in advance: a small,
+reversible trial (behind a flag, in one module, or as an eval) with a concrete before/after check on this repo, such as a
+benchmark, eval, test, token or latency count, is sound when it fits the code. Score how well the experiment is designed
+and what it costs, not certainty about its result.
+Reject changes that are cosmetic, already done, conflict with the existing design or the user's tools, cannot be measured,
+or need a sweeping rewrite.
+Report the risk of regressions in \`risk\`, not in the score: the bar a change must clear already rises with its risk.
+Score: 80+ a clear win for this repo with a solid check; 65-79 a sound trial worth running (it fits the code, is cheap to try
+and to undo, and has a concrete before/after check); 50-64 plausible but weak (little benefit here, a weak check, or a cost
+out of proportion to the gain); below 50 unsound.`;
 
 export const PlanSchema = z.object({
   summary: z.string(),

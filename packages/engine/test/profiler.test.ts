@@ -8,8 +8,9 @@ import { profileRepo, syncRepos, type Ctx } from "../src";
 const handle = createDb({ memory: true });
 let ctx: Ctx;
 
-/** One remote repo whose default-branch head and pushed_at we can move. */
+/** One remote repo whose default-branch head and pushed_at we can move, plus any others a test adds. */
 const remote = { head: "aaa111", pushedAt: "2026-01-01T00:00:00Z" };
+const others: Record<string, unknown>[] = [];
 let branchCalls = 0;
 let profiled = 0;
 
@@ -31,7 +32,7 @@ const repo = () => ({
 });
 
 const fakeOctokit = {
-  paginate: async () => [repo()],
+  paginate: async () => [repo(), ...others],
   repos: {
     listForAuthenticatedUser: async () => ({ data: [repo()] }),
     getBranch: async () => {
@@ -115,5 +116,18 @@ describe("repo profiling follows the default branch", () => {
       expect(row!.profiledSha).toBe(sha);
     }
     expect(profiled).toBe(3);
+  });
+});
+
+describe("new repos", () => {
+  it("leaves a new private repo unwatched, and keeps your choice once you turn it on", async () => {
+    others.push({ ...repo(), id: 2, full_name: "me/secret", name: "secret", private: true, html_url: "https://github.com/me/secret" });
+    expect((await syncRepos(ctx)).queued).toBe(0);
+    const secret = async () => (await ctx.db.select().from(repos).where(eq(repos.fullName, "me/secret")))[0]!;
+    expect((await secret()).watch).toBe(false);
+
+    await ctx.db.update(repos).set({ watch: true }).where(eq(repos.fullName, "me/secret"));
+    expect((await syncRepos(ctx)).queued).toBe(1);
+    expect((await secret()).watch).toBe(true);
   });
 });

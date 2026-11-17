@@ -31,7 +31,7 @@ export default async function ReposPage({ searchParams }: { searchParams: Promis
       <div className="flex flex-wrap items-end justify-between gap-4">
         <div>
           <h1 className="text-2xl font-semibold tracking-tight">Repos</h1>
-          <p className="mt-1 text-sm text-muted">Each repo is profiled (stack, modules, tests) so new techniques can be matched to it. Swarms only write where you allow them.</p>
+          <p className="mt-1 text-sm text-muted">Each repo is profiled (stack, modules, tests) so new techniques can be matched to it. New private repos stay off until you watch them, and swarms only write where you allow them.</p>
         </div>
         <ActionButton url="/api/repos/sync" label="Repo sync">
           <RefreshCw /> Sync

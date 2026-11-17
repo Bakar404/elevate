@@ -38,7 +38,9 @@ export async function syncRepos(ctx: Ctx, tenantId = "local", opts: { scheduled?
     };
     const [row] = await ctx.db
       .insert(repos)
-      .values({ ...values, watch: !r.archived && !r.fork })
+      // A repo seen for the first time is watched unless it's archived, a fork or private: private code is only
+      // read once you turn it on in Repos. After that, your choice stands.
+      .values({ ...values, watch: !r.archived && !r.fork && !r.isPrivate })
       .onConflictDoUpdate({ target: [repos.tenantId, repos.fullName], set: { ...values, updatedAt: new Date() } })
       .returning();
     if (!row || !row.watch || row.archived) continue;
